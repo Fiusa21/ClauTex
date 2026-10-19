@@ -4,7 +4,7 @@ A lightweight LaTeX editor that runs locally. Clone it, start it with one comman
 
 Spec: [`docs/SPEC.md`](docs/SPEC.md) · Decisions: [`docs/DECISIONS.md`](docs/DECISIONS.md) · Contributor rules: [`CLAUDE.md`](CLAUDE.md)
 
-**Status:** L0 (restructure). The local server and app shell run; projects, editing and compiling follow in L1–L3. A hosted, collaborative version may follow later.
+**Status:** L1 (projects and files). Create, rename, duplicate, delete and restore projects; manage files and folders, upload, preview. Editing (L2) and compiling (L3) are next. A hosted, collaborative version may follow later.
 
 ## Requirements
 
@@ -20,14 +20,14 @@ npm install
 npm start
 ```
 
-Open <http://localhost:8765>. Projects are stored in `TexCollab` in your home folder.
+Open <http://localhost:8765>. Projects are stored in `Documents/TexCollab` (or `TexCollab` in your home folder if there is no Documents folder).
 
 Options (after `npm start --`):
 
 | Flag | Environment variable | Default |
 |---|---|---|
 | `--port <n>` | `TEXCOLLAB_PORT` | `8765` |
-| `--workspace <dir>` | `TEXCOLLAB_WORKSPACE` | `~/TexCollab` |
+| `--workspace <dir>` | `TEXCOLLAB_WORKSPACE` | `~/Documents/TexCollab` |
 
 Example: `npm start -- --port 9000 --workspace ~/Documents/latex`
 

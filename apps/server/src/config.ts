@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +18,17 @@ export const DEFAULT_PORT = 8765;
 const DEV_SERVER_PORT = 5173;
 
 const here = dirname(fileURLToPath(import.meta.url));
+
+/** `<home>/Documents/TexCollab` where a Documents folder exists (DECISIONS.md, L1), else `<home>/TexCollab`. */
+export function defaultWorkspace(
+  home: string,
+  exists: (path: string) => boolean = existsSync,
+): string {
+  const documents = join(home, "Documents");
+  return exists(documents)
+    ? join(documents, "TexCollab")
+    : join(home, "TexCollab");
+}
 
 /** Reads command-line flags first, then environment variables, then defaults. */
 export function loadConfig(
@@ -40,7 +52,7 @@ export function loadConfig(
   }
 
   const workspace = resolve(
-    values.workspace ?? env.TEXCOLLAB_WORKSPACE ?? join(homedir(), "TexCollab"),
+    values.workspace ?? env.TEXCOLLAB_WORKSPACE ?? defaultWorkspace(homedir()),
   );
 
   return {

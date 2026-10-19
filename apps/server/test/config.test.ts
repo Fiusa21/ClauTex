@@ -1,14 +1,23 @@
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadConfig } from "../src/config.ts";
+import { defaultWorkspace, loadConfig } from "../src/config.ts";
 
 describe("loadConfig", () => {
-  it("defaults to port 8765 and ~/TexCollab", () => {
+  it("defaults to port 8765 and the default workspace", () => {
     const config = loadConfig([], {});
     expect(config.port).toBe(8765);
-    expect(config.workspace).toBe(join(homedir(), "TexCollab"));
+    expect(config.workspace).toBe(defaultWorkspace(homedir()));
     expect(config.devOrigins).toEqual([]);
+  });
+
+  it("puts the default workspace in Documents when that folder exists", () => {
+    expect(defaultWorkspace("/home/me", () => true)).toBe(
+      join("/home/me", "Documents", "TexCollab"),
+    );
+    expect(defaultWorkspace("/home/me", () => false)).toBe(
+      join("/home/me", "TexCollab"),
+    );
   });
 
   it("prefers flags over environment variables", () => {

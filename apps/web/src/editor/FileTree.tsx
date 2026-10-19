@@ -86,11 +86,14 @@ export function FileTree({
         setEditing(null);
         return;
       }
+      const wasSelected = node.entry.id === selectedId;
       move.mutate(
         { id: node.entry.id, path: target },
         {
-          onSuccess: () => {
+          onSuccess: (moved) => {
             setEditing(null);
+            // Files are identified by path: keep the renamed file open.
+            if (wasSelected) onSelect(moved);
           },
           onError: fail,
         },

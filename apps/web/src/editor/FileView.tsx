@@ -10,7 +10,7 @@ export function BinaryView({
   projectId: string;
   file: FileEntry;
 }) {
-  const isImage = file.contentType?.startsWith("image/") ?? false;
+  const isImage = /\.(png|jpe?g|gif|webp|svg)$/i.test(file.path);
   return (
     <div className="binary-view">
       {isImage ? (

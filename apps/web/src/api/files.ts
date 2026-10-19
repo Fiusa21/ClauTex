@@ -1,16 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, apiUpload } from "./client.ts";
-import { projectKeys, type ProjectDetails } from "./projects.ts";
+import { projectKeys, projectUrl, type Project } from "./projects.ts";
 
 export type FileKind = "folder" | "doc" | "binary";
 
+/** A file or folder in a project. Files are identified by their path (`id === path`). */
 export interface FileEntry {
   id: string;
   path: string;
   kind: FileKind;
   size: number | null;
-  contentType: string | null;
-  updatedAt: string;
+  mtime: string;
+}
+
+interface ServerFile {
+  path: string;
+  kind: "folder" | "file";
+  text: boolean;
+  size: number | null;
+  mtime: string;
 }
 
 export interface UploadResponse {
@@ -18,29 +26,33 @@ export interface UploadResponse {
   notice: string | null;
 }
 
-const base = (projectId: string) =>
-  `/api/projects/${encodeURIComponent(projectId)}/files`;
+const toEntry = (f: ServerFile): FileEntry => ({
+  id: f.path,
+  path: f.path,
+  kind: f.kind === "folder" ? "folder" : f.text ? "doc" : "binary",
+  size: f.size,
+  mtime: f.mtime,
+});
+
+const filesUrl = (project: string) => `${projectUrl(project)}/files`;
 
 export const fileKeys = {
-  list: (projectId: string) => ["files", projectId] as const,
+  list: (project: string) => ["files", project] as const,
 };
 
-export const contentUrl = (
-  projectId: string,
-  fileId: string,
-  download = false,
-) =>
-  `${base(projectId)}/${encodeURIComponent(fileId)}/content${download ? "?download=true" : ""}`;
+export const contentUrl = (project: string, path: string, download = false) =>
+  `${filesUrl(project)}/content?path=${encodeURIComponent(path)}${download ? "&download=true" : ""}`;
 
-export function useFiles(projectId: string) {
+export function useFiles(project: string) {
   return useQuery({
-    queryKey: fileKeys.list(projectId),
-    queryFn: () => api<FileEntry[]>("GET", base(projectId)),
+    queryKey: fileKeys.list(project),
+    queryFn: async () =>
+      (await api<ServerFile[]>("GET", filesUrl(project))).map(toEntry),
   });
 }
 
 function useFileMutation<TInput, TResult>(
-  projectId: string,
+  project: string,
   fn: (input: TInput) => Promise<TResult>,
 ) {
   const queryClient = useQueryClient();
@@ -48,50 +60,64 @@ function useFileMutation<TInput, TResult>(
     mutationFn: fn,
     onSuccess: async () => {
       await Promise.all([
-        queryClient.invalidateQueries({ queryKey: fileKeys.list(projectId) }),
+        queryClient.invalidateQueries({ queryKey: fileKeys.list(project) }),
         // Moves can change the main file.
         queryClient.invalidateQueries({
-          queryKey: projectKeys.detail(projectId),
+          queryKey: projectKeys.detail(project),
         }),
       ]);
     },
   });
 }
 
-export const useCreateFile = (projectId: string) =>
+export const useCreateFile = (project: string) =>
   useFileMutation(
-    projectId,
-    (input: { path: string; kind: "doc" | "folder" }) =>
-      api<FileEntry>("POST", base(projectId), input),
+    project,
+    async (input: { path: string; kind: "doc" | "folder" }) =>
+      toEntry(
+        await api<ServerFile>("POST", filesUrl(project), {
+          path: input.path,
+          kind: input.kind === "doc" ? "file" : "folder",
+        }),
+      ),
   );
 
-export const useUploadFile = (projectId: string) =>
-  useFileMutation(projectId, ({ file, path }: { file: File; path: string }) => {
-    const form = new FormData();
-    form.append("file", file);
-    return apiUpload<UploadResponse>(
-      `${base(projectId)}/upload?path=${encodeURIComponent(path)}`,
-      form,
-    );
-  });
-
-export const useMoveFile = (projectId: string) =>
-  useFileMutation(projectId, ({ id, path }: { id: string; path: string }) =>
-    api<FileEntry>("PATCH", `${base(projectId)}/${encodeURIComponent(id)}`, {
+export const useUploadFile = (project: string) =>
+  useFileMutation(
+    project,
+    async ({
+      file,
       path,
-    }),
+    }: {
+      file: File;
+      path: string;
+    }): Promise<UploadResponse> => {
+      const form = new FormData();
+      form.append("file", file);
+      const stored = await apiUpload<ServerFile>(
+        `${filesUrl(project)}/upload?path=${encodeURIComponent(path)}`,
+        form,
+      );
+      return { file: toEntry(stored), notice: null };
+    },
   );
 
-export const useDeleteFile = (projectId: string) =>
-  useFileMutation(projectId, (id: string) =>
-    api<undefined>("DELETE", `${base(projectId)}/${encodeURIComponent(id)}`),
-  );
-
-export const useSetMainFile = (projectId: string) =>
-  useFileMutation(projectId, (mainFile: string) =>
-    api<ProjectDetails>(
-      "PATCH",
-      `/api/projects/${encodeURIComponent(projectId)}`,
-      { mainFile },
+export const useMoveFile = (project: string) =>
+  useFileMutation(project, async ({ id, path }: { id: string; path: string }) =>
+    toEntry(
+      await api<ServerFile>("PATCH", filesUrl(project), { from: id, to: path }),
     ),
+  );
+
+export const useDeleteFile = (project: string) =>
+  useFileMutation(project, (id: string) =>
+    api<undefined>(
+      "DELETE",
+      `${filesUrl(project)}?path=${encodeURIComponent(id)}`,
+    ),
+  );
+
+export const useSetMainFile = (project: string) =>
+  useFileMutation(project, (mainFile: string) =>
+    api<Project>("PATCH", projectUrl(project), { mainFile }),
   );

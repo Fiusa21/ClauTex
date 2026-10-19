@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client.ts";
-import { projectKeys, type Compiler, type ProjectDetails } from "./projects.ts";
+import { projectKeys, type Compiler, type Project } from "./projects.ts";
 
 export type BuildStatus = "success" | "failure" | "timeout" | "error";
 
@@ -59,13 +59,9 @@ export function useSetCompiler(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (compiler: Compiler) =>
-      api<ProjectDetails>(
-        "PATCH",
-        `/api/projects/${encodeURIComponent(projectId)}`,
-        {
-          compiler,
-        },
-      ),
+      api<Project>("PATCH", `/api/projects/${encodeURIComponent(projectId)}`, {
+        compiler,
+      }),
     onSuccess: (project) => {
       queryClient.setQueryData(projectKeys.detail(projectId), project);
     },

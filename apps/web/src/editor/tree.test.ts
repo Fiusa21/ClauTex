@@ -7,8 +7,7 @@ const f = (path: string, kind: FileEntry["kind"] = "doc"): FileEntry => ({
   path,
   kind,
   size: null,
-  contentType: null,
-  updatedAt: "2026-10-19T10:00:00Z",
+  mtime: "2026-10-19T10:00:00Z",
 });
 
 describe("buildTree", () => {

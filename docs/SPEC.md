@@ -7,7 +7,7 @@ A lightweight LaTeX editor that runs **locally**: clone the repository, run one 
 
 ### In scope for v1
 - One command to start: `npm install` once, then `npm start`; open `http://localhost:8765`.
-- Projects are **plain folders on disk** inside a workspace folder (default `~/TexCollab`), usable with git and other editors.
+- Projects are **plain folders on disk** inside a workspace folder (default `Documents/TexCollab`), usable with git and other editors.
 - Project list: create, rename, duplicate, delete (to a restorable trash), open.
 - File tree: folders, text files, uploaded images/PDFs; create, rename, move (drag), delete, upload, download.
 - Code editor with LaTeX highlighting, search, bracket matching, autocomplete; autosave.
@@ -38,12 +38,12 @@ Requirements for users: Node.js 24 LTS (≥ 24.15) and, for compiling, a TeX dis
 
 ## 3. Storage
 
-Workspace folder: `TEXCOLLAB_WORKSPACE` env var or `--workspace <dir>`; default `<home>/TexCollab`. Created on first start.
+Workspace folder: `TEXCOLLAB_WORKSPACE` env var or `--workspace <dir>`; default `<home>/Documents/TexCollab` if a Documents folder exists, else `<home>/TexCollab`. Created on first start.
 
 - Every direct subfolder is a project; its folder name is the project name. Folders starting with `.` are ignored.
 - `<project>/.texcollab.json` (optional): `{ "mainFile": "main.tex", "compiler": "pdflatex" | "xelatex" | "lualatex" }`. Missing → defaults (`main.tex` if present, else the first `.tex` file in the root; `pdflatex`).
 - Project ids in the API are the folder names, URL-encoded; renaming a project renames its folder.
-- Deleted projects move to `<workspace>/.trash/<name>-<timestamp>/` and can be restored from there; the trash is never emptied automatically.
+- Deleted projects move to `<workspace>/.trash/<name>~<timestamp>/` and can be restored from the Trash view; deleted files and folders move to `<workspace>/.trash/<project>/<timestamp>/<path>` (recoverable with a file manager). The trash is never emptied automatically.
 - Build output goes to a per-project directory in the OS cache folder (`%LOCALAPPDATA%\TexCollab\Cache`, `~/Library/Caches/TexCollab`, `$XDG_CACHE_HOME/texcollab` or `~/.cache/texcollab`), never into the project folder. The last build per project is kept.
 - Text files are written atomically (write a temporary file in the same folder, then rename) and keep their line endings; new files use LF.
 - Text vs. binary by extension: `.tex .bib .sty .cls .txt .md .bst .cfg .def .dtx .ins .csv .tikz .lua` and `.latexmkrc` are editable text (UTF-8; other encodings are shown read-only with a notice). Max editable size 2 MB. Upload limit 50 MB per file.
@@ -65,11 +65,11 @@ Projects
 - `POST /api/projects/import` (ZIP), `GET /api/projects/{name}/export.zip`
 
 Files
-- `GET /api/projects/{name}/files` — tree as a flat list (path, kind, size, mtime); hidden files and the `.texcollab.json` are not listed
+- `GET /api/projects/{name}/files` — tree as a flat list (path, kind: folder|file, text, size, mtime); hidden entries (starting with `.`) and symlinks leading outside the project are not listed. Paths with hidden segments are rejected by every file endpoint (no writing to `.git/…` or `.texcollab.json` through the API).
 - `GET /api/projects/{name}/files/content?path=` — text (with an `etag` = mtime+size) or binary
 - `PUT /api/projects/{name}/files/content?path=` {text, baseEtag} — save; `409 file_changed` if the file changed on disk since `baseEtag`
-- `POST /api/projects/{name}/files` {path, kind: folder|file}; `POST …/files/upload?path=` (multipart)
-- `PATCH /api/projects/{name}/files` {from, to} — rename/move; `DELETE …/files?path=`
+- `POST /api/projects/{name}/files` {path, kind: folder|file} (missing parent folders are created); `POST …/files/upload?path=&replace=` (multipart field `file`, max 50 MB, written to a temporary file and renamed into place; `path` defaults to the uploaded file's base name)
+- `PATCH /api/projects/{name}/files` {from, to} — rename/move (folders with contents; case-only renames work; the main file follows); `DELETE …/files?path=` (to the trash; the main file and folders containing it are protected)
 - `GET /api/projects/{name}/events` — server-sent events for external changes (`changed`, `created`, `deleted` with paths)
 
 Compile

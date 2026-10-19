@@ -1,3 +1,4 @@
+import fastifyMultipart from "@fastify/multipart";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 import { existsSync } from "node:fs";
@@ -5,7 +6,11 @@ import { join, sep } from "node:path";
 import type { Config } from "./config.ts";
 import { createGuard } from "./guard.ts";
 import { ApiError, sendProblem } from "./problem.ts";
+import { fileRoutes } from "./routes/files.ts";
+import { projectRoutes } from "./routes/projects.ts";
+import { MAX_UPLOAD_BYTES } from "./textFiles.ts";
 import { VERSION } from "./version.ts";
+import { Workspace } from "./workspace.ts";
 
 export async function buildApp(
   config: Config,
@@ -41,6 +46,13 @@ export async function buildApp(
       "An unexpected error occurred.",
     );
   });
+
+  await app.register(fastifyMultipart, {
+    limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 4 },
+  });
+  const workspace = new Workspace(config.workspace);
+  projectRoutes(app, workspace);
+  fileRoutes(app, workspace);
 
   app.get("/api/health", () => ({
     status: "UP",

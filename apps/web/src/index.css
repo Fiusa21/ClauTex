@@ -753,3 +753,24 @@ a:focus-visible {
 .pdf-message {
   padding: 1rem;
 }
+
+/* L1: two panes (tree | preview) until the PDF pane returns in L3 */
+.workspace-panes.two-panes {
+  grid-template-columns: var(--tree-width, 240px) 6px minmax(0, 1fr);
+}
+
+.workspace-path {
+  margin-top: -0.5rem;
+  font-size: 0.85rem;
+}
+
+.text-preview {
+  flex: 1;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}

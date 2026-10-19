@@ -6,6 +6,7 @@ import {
   readFile,
   realpath,
   rename,
+  rm,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -183,13 +184,22 @@ export class Workspace {
         ? normalizeProjectName(rawNewName)
         : await this.freeName(`Copy of ${basename(from)}`);
     const to = join(this.root, name);
+    // mkdir reserves the name atomically; the entries are then copied into it one by one
+    // (newer Node versions refuse to `cp` a folder onto an existing, even empty, folder).
     await mkdirNew(to, name);
-    await cp(from, to, {
-      recursive: true,
-      errorOnExist: true,
-      force: false,
-      preserveTimestamps: true,
-    });
+    try {
+      for (const entry of await readdir(from)) {
+        await cp(join(from, entry), join(to, entry), {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+          preserveTimestamps: true,
+        });
+      }
+    } catch (err) {
+      await rm(to, { recursive: true, force: true });
+      throw err;
+    }
     return this.info(name);
   }
 

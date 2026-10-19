@@ -102,7 +102,7 @@ describe("compiling in Docker", () => {
     ) as string[];
     expect(runArgs).toContain("texlive/texlive:test");
     expect(runArgs.join(" ")).toContain(
-      `source=${realpathSync(join(workspace, "Paper"))},target=/project,readonly`,
+      `source=${realpathSync.native(join(workspace, "Paper"))},target=/project,readonly`,
     );
     expect(runArgs).toContain("-outdir=/out");
     expect(runArgs).toContain("-no-shell-escape");

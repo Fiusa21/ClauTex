@@ -764,13 +764,40 @@ a:focus-visible {
   font-size: 0.85rem;
 }
 
-.text-preview {
+.local-editor {
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  margin: 0;
-  padding: 0.75rem 1rem;
-  overflow: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 14px;
-  line-height: 1.55;
-  white-space: pre-wrap;
+  min-height: 0;
+}
+
+.editor-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.editor-banner.warning {
+  background: color-mix(in srgb, var(--syn-literal) 15%, var(--bg));
+}
+
+.save-state {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.save-saved {
+  color: var(--ok);
+}
+
+.save-conflict,
+.save-error,
+.save-deleted {
+  color: var(--danger);
 }

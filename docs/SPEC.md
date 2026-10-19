@@ -66,11 +66,13 @@ Projects
 
 Files
 - `GET /api/projects/{name}/files` — tree as a flat list (path, kind: folder|file, text, size, mtime); hidden entries (starting with `.`) and symlinks leading outside the project are not listed. Paths with hidden segments are rejected by every file endpoint (no writing to `.git/…` or `.texcollab.json` through the API).
-- `GET /api/projects/{name}/files/content?path=` — text (with an `etag` = mtime+size) or binary
-- `PUT /api/projects/{name}/files/content?path=` {text, baseEtag} — save; `409 file_changed` if the file changed on disk since `baseEtag`
+- `GET /api/projects/{name}/files/content?path=[&download=true]` — raw bytes (any file type), typed by extension, sandboxed
+- `GET /api/projects/{name}/files/text?path=` → `{ text, etag, editable, encoding, lineEnding, reason }` for the editor: text with LF line endings; `etag` is a hash of the exact bytes on disk; `editable` is false for non-UTF-8 (`reason: "not_utf8"`, shown as Windows-1252) or files over 2 MB (`"too_large"`)
+- `PUT /api/projects/{name}/files/text?path=` {text, baseEtag} → `{ etag }` — saves only if the file on disk is still `baseEtag`, else `409 file_changed` with the current `etag`; keeps the file's line endings (LF/CRLF) and UTF-8 BOM; atomic write; `423 file_locked` when another program holds the file (Windows)
+- `POST /api/projects/{name}/files/convert?path=` — re-encodes a Windows-1252 file as UTF-8 (only on explicit request)
 - `POST /api/projects/{name}/files` {path, kind: folder|file} (missing parent folders are created); `POST …/files/upload?path=&replace=` (multipart field `file`, max 50 MB, written to a temporary file and renamed into place; `path` defaults to the uploaded file's base name)
 - `PATCH /api/projects/{name}/files` {from, to} — rename/move (folders with contents; case-only renames work; the main file follows); `DELETE …/files?path=` (to the trash; the main file and folders containing it are protected)
-- `GET /api/projects/{name}/events` — server-sent events for external changes (`changed`, `created`, `deleted` with paths)
+- `GET /api/projects/{name}/events` — server-sent events: `ready`, then `change` with `{ paths }` (project-relative, batched over 150 ms, hidden entries skipped) for any change on disk, including the app's own saves; `unavailable` if the folder cannot be watched
 
 Compile
 - `POST /api/projects/{name}/compile` → `{ status, errors, logExcerpt, pdfUrl, durationMs }`
@@ -105,7 +107,8 @@ Docker mode (optional, when TeX is missing): the same command in `texlive/texliv
 ## 7. Frontend
 
 Routes: `/` (project list), `/project/:name`.
-Editor page: file tree | editor | PDF (resizable; stacked below 900 px). Top bar: project name, save state ("Saved" / "Saving…" / "Changed on disk"), compiler select, Compile (Ctrl/Cmd+S or Ctrl/Cmd+Enter). Error list with jump-to-line. When a file open in the editor changes on disk: reload silently if there are no unsaved edits, otherwise ask (keep mine / load from disk).
+Editor page: file tree | editor | PDF (resizable; stacked below 900 px). Top bar: project name, save state ("Saved", "Unsaved changes", "Saving…", "Changed on disk", "Deleted on disk", "Read-only", "Save failed"), compiler select, Compile (Ctrl/Cmd+S or Ctrl/Cmd+Enter). Error list with jump-to-line.
+Saving: autosave ~1 s after typing stops; Ctrl/Cmd+S saves at once (and compiles from L3); pending edits are written before switching files and when the editor closes; leaving the page with unsaved edits asks first. When a file open in the editor changes on disk: reload silently if there are no unsaved edits, otherwise pause autosave and ask (keep mine / load from disk). Non-UTF-8 files open read-only with a "Convert to UTF-8" button.
 First start without TeX: a setup panel with per-OS instructions and the Docker option.
 Design: clean, minimal, keyboard friendly, light and dark mode.
 

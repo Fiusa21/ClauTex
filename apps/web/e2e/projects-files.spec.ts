@@ -96,7 +96,7 @@ test.describe("L1: files on disk", () => {
     const name = uniqueName("Files");
     await openProject(page, name);
     const tree = page.getByRole("navigation", { name: "Project files" });
-    await expect(page.getByTestId("text-preview")).toContainText(
+    await expect(page.locator(".cm-content")).toContainText(
       "\\documentclass{article}",
     );
 
@@ -177,7 +177,7 @@ test.describe("L1: files on disk", () => {
     );
     await page.reload();
     await page.getByRole("treeitem", { name: "notes.md" }).click();
-    await expect(page.getByTestId("text-preview")).toHaveText(
+    await expect(page.locator(".cm-content")).toHaveText(
       "# Written by another program",
     );
   });

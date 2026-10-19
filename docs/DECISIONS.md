@@ -33,3 +33,18 @@ User-confirmed defaults:
 - **Uploads** are written to a temporary file in the target folder and renamed into place (no half-written files); `@fastify/multipart` 10.1 (pure JS) enforces the 50 MB limit.
 - **The web app identifies files by path** (`id === path`), keeping the existing tree component; renaming the open file keeps it selected.
 - **Text files are shown read-only in L1**; editing (with autosave and external-change detection) is L2.
+
+## 2026-10-19 (before L2)
+
+User-confirmed defaults:
+- **Autosave ~1 s after typing stops**; Ctrl/⌘+S saves immediately (and compiles from L3 on).
+- **Non-UTF-8 text files open read-only with a "Convert to UTF-8" button**; the app never changes a file's encoding on its own.
+
+## 2026-10-19 (L2)
+
+- **Conflict detection uses a SHA-256 hash of the file's bytes as ETag**, not mtime+size. — Two saves within the filesystem's timestamp resolution with equal size would otherwise look identical and an external change could be overwritten.
+- **The editor works in LF; the server writes the file's original line endings and BOM back.** — Editing a Windows file must not rewrite every line.
+- **Saves are atomic** (temporary file in the same folder + rename). A Windows sharing violation becomes `423 file_locked` instead of a 500.
+- **Live changes via one recursive `fs.watch` per open project**, shared by all browser tabs, batched over 150 ms, sent as server-sent events. The app's own saves also produce events; the editor recognizes them by ETag. The file tree refreshes on every event.
+- **Save logic is a framework-free class (`EditorSync`)**, unit-tested with fake timers: debounced autosave, one save at a time (edits during a save are saved afterwards against the new version), conflict on 409 or on an external change while dirty (autosave pauses until the user decides), silent reload when clean, write-on-close with `fetch(…, { keepalive: true })`. — React's hook rules (and testability) argued against keeping it in the component.
+- **CodeMirror's own history** for undo/redo; LaTeX highlighting (sTeX mode), completions and theme are our own extension set.

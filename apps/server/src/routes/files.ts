@@ -82,6 +82,23 @@ export function fileRoutes(app: FastifyInstance, workspace: Workspace): void {
     },
   );
 
+  app.get<NameParams>("/api/projects/:name/files/text", async (request) =>
+    (await filesOf(request.params.name)).readText(request.query.path),
+  );
+
+  app.put<NameParams>("/api/projects/:name/files/text", async (request) => {
+    const { text, baseEtag } = body(request.body);
+    return (await filesOf(request.params.name)).writeText(
+      request.query.path,
+      text,
+      baseEtag,
+    );
+  });
+
+  app.post<NameParams>("/api/projects/:name/files/convert", async (request) =>
+    (await filesOf(request.params.name)).convertToUtf8(request.query.path),
+  );
+
   app.get<NameParams>(
     "/api/projects/:name/files/content",
     async (request, reply: FastifyReply) => {

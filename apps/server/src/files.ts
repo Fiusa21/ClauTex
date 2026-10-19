@@ -4,6 +4,7 @@ import {
   lstat,
   mkdir,
   readdir,
+  readFile,
   realpath,
   rename,
   rm,
@@ -15,8 +16,21 @@ import type { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { isInside, normalizePath, resolveInside } from "./paths.ts";
 import { ApiError } from "./problem.ts";
-import { MAX_UPLOAD_BYTES, isTextPath } from "./textFiles.ts";
+import { decodeText, encodeText, etagOf, type LineEnding } from "./text.ts";
+import { MAX_TEXT_BYTES, MAX_UPLOAD_BYTES, isTextPath } from "./textFiles.ts";
 import { exists, sameEntry, TRASH_DIR, type Workspace } from "./workspace.ts";
+
+export interface TextFile {
+  path: string;
+  text: string;
+  etag: string;
+  /** False for files that are not valid UTF-8, too large, or not a text type: shown read-only. */
+  editable: boolean;
+  encoding: "utf-8" | "windows-1252";
+  lineEnding: LineEnding;
+  /** Why the file is read-only, for the UI. */
+  reason: "not_utf8" | "too_large" | null;
+}
 
 export interface FileInfo {
   path: string;
@@ -240,6 +254,118 @@ export class ProjectFiles {
       ? await resolveInside(this.dir, parent)
       : await realpath(this.dir);
     return join(parentAbs, path.slice(slash + 1));
+  }
+
+  /** Reads a text file for the editor. */
+  async readText(rawPath: unknown): Promise<TextFile> {
+    const file = await this.existingFile(rawPath);
+    if (!isTextPath(file.path)) {
+      throw new ApiError(
+        400,
+        "not_a_text_file",
+        "This file type cannot be edited as text.",
+      );
+    }
+    const bytes = await readFile(file.abs);
+    const decoded = decodeText(bytes);
+    const tooLarge = bytes.length > MAX_TEXT_BYTES;
+    return {
+      path: file.path,
+      text: tooLarge ? decoded.text.slice(0, MAX_TEXT_BYTES) : decoded.text,
+      etag: etagOf(bytes),
+      editable: decoded.utf8 && !tooLarge,
+      encoding: decoded.utf8 ? "utf-8" : "windows-1252",
+      lineEnding: decoded.lineEnding,
+      reason: tooLarge ? "too_large" : decoded.utf8 ? null : "not_utf8",
+    };
+  }
+
+  /**
+   * Saves editor text. Refuses with 409 `file_changed` when the file on disk is no longer the version the editor
+   * loaded (`baseEtag`). Keeps the file's line endings and BOM; writes atomically (temporary file + rename).
+   */
+  async writeText(
+    rawPath: unknown,
+    text: unknown,
+    baseEtag: unknown,
+  ): Promise<{ etag: string }> {
+    if (typeof text !== "string" || typeof baseEtag !== "string") {
+      throw new ApiError(
+        400,
+        "validation_failed",
+        "text and baseEtag are required.",
+      );
+    }
+    const file = await this.existingFile(rawPath);
+    if (!isTextPath(file.path)) {
+      throw new ApiError(
+        400,
+        "not_a_text_file",
+        "This file type cannot be edited as text.",
+      );
+    }
+    const current = await readFile(file.abs);
+    const currentEtag = etagOf(current);
+    if (currentEtag !== baseEtag) {
+      throw new ApiError(409, "file_changed", "The file was changed on disk.", {
+        etag: currentEtag,
+      });
+    }
+    const decoded = decodeText(current);
+    if (!decoded.utf8) {
+      throw new ApiError(
+        409,
+        "not_utf8",
+        "Convert this file to UTF-8 before editing it.",
+      );
+    }
+    const bytes = encodeText(text, decoded);
+    if (bytes.length > MAX_TEXT_BYTES) {
+      throw new ApiError(
+        413,
+        "file_too_large",
+        "Text files can be at most 2 MB.",
+      );
+    }
+    await this.atomicWrite(file.abs, bytes);
+    return { etag: etagOf(bytes) };
+  }
+
+  /** Re-encodes a Windows-1252 (Latin-1) text file as UTF-8, on explicit request only. */
+  async convertToUtf8(rawPath: unknown): Promise<TextFile> {
+    const file = await this.existingFile(rawPath);
+    const bytes = await readFile(file.abs);
+    const decoded = decodeText(bytes);
+    if (decoded.utf8) return this.readText(file.path);
+    await this.atomicWrite(
+      file.abs,
+      encodeText(decoded.text, { bom: false, lineEnding: decoded.lineEnding }),
+    );
+    return this.readText(file.path);
+  }
+
+  private async atomicWrite(abs: string, bytes: Buffer): Promise<void> {
+    const temp = join(
+      dirname(abs),
+      `.texcollab-save-${randomBytes(6).toString("hex")}`,
+    );
+    try {
+      await writeFile(temp, bytes, { flag: "wx" });
+      await rename(temp, abs);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      // Windows refuses to replace a file another program holds open.
+      if (code === "EPERM" || code === "EBUSY" || code === "EACCES") {
+        throw new ApiError(
+          423,
+          "file_locked",
+          "The file is in use by another program. Close it there and try again.",
+        );
+      }
+      throw err;
+    } finally {
+      await rm(temp, { force: true });
+    }
   }
 
   async describe(path: string): Promise<FileInfo> {

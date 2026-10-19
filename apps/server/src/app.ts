@@ -7,6 +7,7 @@ import type { Config } from "./config.ts";
 import { createGuard } from "./guard.ts";
 import { ApiError, sendProblem } from "./problem.ts";
 import { fileRoutes } from "./routes/files.ts";
+import { eventRoutes } from "./routes/events.ts";
 import { projectRoutes } from "./routes/projects.ts";
 import { MAX_UPLOAD_BYTES } from "./textFiles.ts";
 import { VERSION } from "./version.ts";
@@ -25,7 +26,13 @@ export async function buildApp(
 
   app.setErrorHandler((error: unknown, request, reply) => {
     if (error instanceof ApiError) {
-      return sendProblem(reply, error.status, error.code, error.message);
+      return sendProblem(
+        reply,
+        error.status,
+        error.code,
+        error.message,
+        error.extra,
+      );
     }
     // Fastify's own client errors (malformed JSON, body too large, …) carry a 4xx statusCode.
     const statusCode = (error as { statusCode?: unknown }).statusCode;
@@ -53,6 +60,7 @@ export async function buildApp(
   const workspace = new Workspace(config.workspace);
   projectRoutes(app, workspace);
   fileRoutes(app, workspace);
+  eventRoutes(app, workspace);
 
   app.get("/api/health", () => ({
     status: "UP",

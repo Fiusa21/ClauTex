@@ -4,7 +4,7 @@ A lightweight LaTeX editor that runs locally. Clone it, start it with one comman
 
 Spec: [`docs/SPEC.md`](docs/SPEC.md) · Decisions: [`docs/DECISIONS.md`](docs/DECISIONS.md) · Contributor rules: [`CLAUDE.md`](CLAUDE.md)
 
-**Status:** L1 (projects and files). Create, rename, duplicate, delete and restore projects; manage files and folders, upload, preview. Editing (L2) and compiling (L3) are next. A hosted, collaborative version may follow later.
+**Status:** L2 (editor). Projects and files on disk; a LaTeX editor with autosave that notices changes made by other programs. Compiling (L3) is next. A hosted, collaborative version may follow later.
 
 ## Requirements
 

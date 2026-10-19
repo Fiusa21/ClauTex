@@ -21,6 +21,11 @@ const port = 8799;
 
 // Real TeX only when asked for (TEXCOLLAB_E2E_REAL_TEX=1); otherwise the cross-platform fake latexmk.
 const realTex = process.env.TEXCOLLAB_E2E_REAL_TEX === "1";
+const fakeDocker = JSON.stringify([
+  process.execPath,
+  join(import.meta.dirname, "..", "server", "test", "fake-docker.mjs"),
+  join(root, "docker-state"),
+]);
 const fakeLatexmk = JSON.stringify([
   process.execPath,
   join(import.meta.dirname, "..", "server", "test", "fake-latexmk.mjs"),
@@ -29,6 +34,8 @@ const fakeLatexmk = JSON.stringify([
 export default defineConfig({
   testDir: "e2e",
   forbidOnly: !!process.env.CI,
+  // Settings (compile mode, timeout) are global to the server: run tests one after another.
+  workers: 1,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   use: {
@@ -46,7 +53,9 @@ export default defineConfig({
         env: {
           TEXCOLLAB_CACHE_DIR: join(root, "cache"),
           TEXCOLLAB_CONFIG_DIR: join(root, "config"),
-          ...(realTex ? {} : { TEXCOLLAB_LATEXMK: fakeLatexmk }),
+          ...(realTex
+            ? {}
+            : { TEXCOLLAB_LATEXMK: fakeLatexmk, TEXCOLLAB_DOCKER: fakeDocker }),
         },
       },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

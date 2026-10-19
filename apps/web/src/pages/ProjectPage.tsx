@@ -16,6 +16,7 @@ import {
 import { useProjectEvents } from "../api/events.ts";
 import { useFiles, type FileEntry } from "../api/files.ts";
 import { useHealth } from "../api/health.ts";
+import { useSettings } from "../api/settings.ts";
 import { useProject, type Compiler } from "../api/projects.ts";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ErrorPanel } from "../components/ErrorPanel.tsx";
@@ -42,13 +43,14 @@ const COMPILERS: { value: Compiler; label: string }[] = [
 ];
 
 export function ProjectPage() {
-  const { name = "" } = useParams();
-  const project = useProject(name);
-  const files = useFiles(name);
+  const { id = "" } = useParams();
+  const project = useProject(id);
+  const files = useFiles(id);
   const health = useHealth();
-  const lastBuild = useLastBuild(name);
-  const compile = useCompile(name);
-  const setCompiler = useSetCompiler(name);
+  const settings = useSettings();
+  const lastBuild = useLastBuild(id);
+  const compile = useCompile(id);
+  const setCompiler = useSetCompiler(id);
   const [params, setParams] = useSearchParams();
   const [treeWidth, setTreeWidth] = useState(220);
   const [pdfWidth, setPdfWidth] = useState(() =>
@@ -59,7 +61,7 @@ export function ProjectPage() {
   const [jump, setJump] = useState<(Jump & { path: string }) | null>(null);
   const editor = useRef<EditorHandle>(null);
 
-  useProjectEvents(name, (paths) => {
+  useProjectEvents(id, (paths) => {
     setDiskChange({ paths, seq: Date.now() });
   });
 
@@ -123,7 +125,9 @@ export function ProjectPage() {
     requested && requested.kind !== "folder"
       ? requested
       : files.data.find((f) => f.path === p.mainFile);
-  const texAvailable = health.data?.tex.available ?? true;
+  // In Docker mode a missing local TeX does not matter; Docker problems are reported by the compile.
+  const dockerMode = settings.data?.compileMode === "docker";
+  const texAvailable = dockerMode || (health.data?.tex.available ?? true);
 
   function jumpTo(issue: CompileIssue) {
     const target = files.data?.find(
@@ -196,7 +200,7 @@ export function ProjectPage() {
           }
         >
           <FileTree
-            projectId={p.name}
+            projectId={p.id}
             files={files.data}
             mainFile={p.mainFile ?? ""}
             selectedId={current?.id}
@@ -223,14 +227,14 @@ export function ProjectPage() {
               <LocalEditor
                 key={current.path}
                 ref={editor}
-                project={p.name}
+                project={p.id}
                 path={current.path}
                 diskChange={diskChange}
                 jump={jump?.path === current.path ? jump : undefined}
                 onState={setSaveState}
               />
             ) : current?.kind === "binary" ? (
-              <BinaryView projectId={p.name} file={current} />
+              <BinaryView projectId={p.id} file={current} />
             ) : (
               <p className="page-status">Select a file.</p>
             )}
@@ -244,9 +248,9 @@ export function ProjectPage() {
             onChange={setPdfWidth}
           />
           <CompilePanel
-            project={p.name}
+            project={p.id}
             build={compile.data ?? lastBuild.data}
-            tex={health.data?.tex}
+            tex={dockerMode ? undefined : health.data?.tex}
             compiling={compile.isPending}
             compileError={compile.error}
             onJump={jumpTo}

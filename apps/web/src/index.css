@@ -826,3 +826,102 @@ a:focus-visible {
 .save-state + .compile-controls {
   margin-left: 1rem;
 }
+
+/* L4: projects page actions, settings */
+.secondary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+  margin: -0.5rem 0 1.25rem;
+}
+
+.inline-action {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.open-folder-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 28rem;
+}
+
+.open-folder-form input {
+  flex: 1 1 16rem;
+}
+
+.project-path {
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.header-link {
+  text-decoration: none;
+}
+
+.settings-section {
+  border-top: 1px solid var(--border);
+  padding: 1rem 0 1.25rem;
+}
+
+.settings-section h2 {
+  margin-top: 0;
+}
+
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.settings-row input:not([type="number"]) {
+  flex: 1 1 20rem;
+}
+
+.settings-row input[type="number"] {
+  width: 6rem;
+}
+
+.mode-choice {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.mode-choice legend {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.status-line {
+  margin: 0 0 0.5rem 1.6rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.folder-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.folder-list li {
+  padding: 0.3rem 0;
+  overflow-wrap: anywhere;
+}
+
+/* Links styled as buttons (Export) look like the buttons next to them. */
+a.button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

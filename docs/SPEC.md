@@ -40,7 +40,8 @@ Requirements for users: Node.js 24 LTS (≥ 24.15) and, for compiling, a TeX dis
 
 Workspace folder: `TEXCOLLAB_WORKSPACE` env var or `--workspace <dir>`; default `<home>/Documents/TexCollab` if a Documents folder exists, else `<home>/TexCollab`. Created on first start.
 
-- Every direct subfolder is a project; its folder name is the project name. Folders starting with `.` are ignored.
+- Every direct subfolder is a project; its folder name is the project name and its id in the API. Folders starting with `.` are ignored.
+- Folders outside the workspace can be opened (“Open folder…”, typed path). They are listed under "Opened folders", have the id `ext:<first 16 hex of SHA-256 of the real path>` (`:` cannot occur in project names), are edited in place, and cannot be renamed or deleted from the app (only removed from the list, or duplicated into the workspace). The root of a drive, the home folder, the workspace and folders inside it are refused.
 - `<project>/.texcollab.json` (optional): `{ "mainFile": "main.tex", "compiler": "pdflatex" | "xelatex" | "lualatex" }`. Missing → defaults (`main.tex` if present, else the first `.tex` file in the root; `pdflatex`).
 - Project ids in the API are the folder names, URL-encoded; renaming a project renames its folder.
 - Deleted projects move to `<workspace>/.trash/<name>~<timestamp>/` and can be restored from the Trash view; deleted files and folders move to `<workspace>/.trash/<project>/<timestamp>/<path>` (recoverable with a file manager). The trash is never emptied automatically.
@@ -55,15 +56,18 @@ All under `/api`, JSON, errors as RFC 7807 problem+json with a stable `code`.
 Health and settings
 - `GET /api/health` → `{ status, version, workspace, tex: { available, version, engines: { pdflatex, xelatex, lualatex }, problem } }` (TeX is detected at startup)
 - `POST /api/tex/detect` — look for TeX again (after installing it)
-- `GET /api/settings`, `PATCH /api/settings` {compileTimeoutSeconds (10–1800, default 120)}; stored as `settings.json` in the OS config folder (`%APPDATA%\TexCollab`, `~/Library/Application Support/TexCollab`, `$XDG_CONFIG_HOME/texcollab`). Workspace and compile mode follow in L4.
+- `GET /api/settings` → `{ compileTimeoutSeconds, compileMode: "local"|"docker", workspace, workspaceLocked }`; `PATCH /api/settings` {compileTimeoutSeconds? (10–1800), compileMode?, workspace? (absolute path, or null for the default; `409 workspace_locked` when set on the command line)}; stored as `settings.json` in the OS config folder (`%APPDATA%\TexCollab`, `~/Library/Application Support/TexCollab`, `$XDG_CONFIG_HOME/texcollab`)
+- `GET /api/folders` → `[{ path, id, exists }]`; `POST /api/folders` {path} → project; `DELETE /api/folders?path=` (removes from the list only)
+- `GET /api/docker` → `{ available, version, image, imagePresent, pulling, pullError, problem }`; `POST /api/docker/pull` starts downloading the TeX image in the background
 
-Projects
-- `GET /api/projects` — name, updatedAt (latest file mtime), mainFile
+Projects (`{name}` in URLs is the project id)
+- `GET /api/projects` — `{ id, name, external, path, mainFile, compiler, updatedAt }` for workspace projects and opened folders, newest first
 - `POST /api/projects` {name} — new folder with a starter `main.tex`
 - `GET /api/projects/{name}`, `PATCH /api/projects/{name}` {name?, mainFile?, compiler?}
 - `DELETE /api/projects/{name}` → moves to trash; `GET /api/trash`, `POST /api/trash/{entry}/restore`
 - `POST /api/projects/{name}/duplicate` {name?}
-- `POST /api/projects/import` (ZIP), `GET /api/projects/{name}/export.zip`
+- `POST /api/projects/import` (multipart `file`, optional field `name`; max 200 MB) — entry names are validated like every API path; absolute or `..` entries reject the whole archive; declared sizes are checked before unpacking (max 500 MB, 10 000 entries); `__MACOSX` and hidden entries are skipped except `.texcollab.json`; one shared top-level folder is stripped; name clashes by case are refused; nothing is left behind on errors
+- `GET /api/projects/{name}/export.zip` — all visible files and folders plus `.texcollab.json` (round-trips byte for byte)
 
 Files
 - `GET /api/projects/{name}/files` — tree as a flat list (path, kind: folder|file, text, size, mtime); hidden entries (starting with `.`) and symlinks leading outside the project are not listed. Paths with hidden segments are rejected by every file endpoint (no writing to `.git/…` or `.texcollab.json` through the API).
@@ -102,14 +106,14 @@ Local mode (default):
 
 TeX detection at startup and in `/api/health`: `latexmk -v` and the engines on `PATH` (on Windows only `.exe` files, since Node cannot start `.bat`/`.cmd` without a shell; TeX Live and MiKTeX ship `latexmk.exe`); the UI shows install instructions per OS when missing (latexmk on Windows needs Perl, which TeX Live ships; MiKTeX installs it on demand).
 
-Docker mode (optional, when TeX is missing; L4): the same command in `texlive/texlive:latest-full` pinned by digest, via the `docker` CLI, with sandbox flags (no network, read-only, non-root, CPU/memory/pids limits, sources via stdin tar).
+Docker mode (settings, L4): the same latexmk command in `texlive/texlive:latest-full` (pinned by digest) via the `docker` CLI: `docker run --rm --name texcollab-<random> --network none --read-only --tmpfs /tmp --memory 2g --memory-swap 2g --cpus 2 --pids-limit 512 --security-opt no-new-privileges --cap-drop ALL --user <uid:gid> --mount <project>:/project:ro --mount <output>:/out --workdir /project/<main folder> … latexmk … -outdir=/out`. The project is mounted read-only; log paths under `/project` map back to the project. On timeout the container is removed (`docker rm -f`), since killing the CLI does not stop it. The image is downloaded on request from the settings page, never during a compile.
 
 ### 6.1 Log parsing
 `file:line:` errors, `!` errors with `l.N`, LaTeX/package warnings with input lines, over/underfull boxes; TeX's follow-up messages after an error are dropped; paths are mapped back to project paths and never outside the project; at most 100 issues.
 
 ## 7. Frontend
 
-Routes: `/` (project list), `/project/:name`.
+Routes: `/` (project list), `/project/:id`, `/settings`.
 Editor page: file tree | editor | PDF (resizable; stacked below 900 px). Top bar: project name, save state ("Saved", "Unsaved changes", "Saving…", "Changed on disk", "Deleted on disk", "Read-only", "Save failed"), compiler select, Compile (Ctrl/Cmd+S or Ctrl/Cmd+Enter). Error list with jump-to-line.
 Saving: autosave ~1 s after typing stops; Ctrl/Cmd+S saves at once (and compiles from L3); pending edits are written before switching files and when the editor closes; leaving the page with unsaved edits asks first. When a file open in the editor changes on disk: reload silently if there are no unsaved edits, otherwise pause autosave and ask (keep mine / load from disk). Non-UTF-8 files open read-only with a "Convert to UTF-8" button.
 First start without TeX: a setup panel with per-OS instructions and the Docker option.

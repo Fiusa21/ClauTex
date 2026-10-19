@@ -7,6 +7,12 @@ import type { Config } from "../src/config.ts";
 
 export const PORT = 8765;
 
+/** A stand-in for the docker CLI (see fake-docker.mjs); its first argument is a state folder. */
+export const FAKE_DOCKER = [
+  process.execPath,
+  join(import.meta.dirname, "fake-docker.mjs"),
+];
+
 /** A cross-platform stand-in for latexmk (see fake-latexmk.mjs). */
 export const FAKE_LATEXMK = [
   process.execPath,
@@ -30,10 +36,13 @@ export async function testApp(overrides: Partial<Config> = {}) {
     port: PORT,
     workspace,
     webDist,
+    workspaceLocked: true,
     devOrigins: [],
     configDir: join(root, "config"),
     cacheDir: join(root, "cache"),
     latexmk: FAKE_LATEXMK,
+    docker: [...FAKE_DOCKER, join(root, "docker-state")],
+    dockerImage: "texlive/texlive:test",
     ...overrides,
   });
   return { app, root, workspace };

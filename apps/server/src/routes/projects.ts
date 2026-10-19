@@ -3,6 +3,8 @@ import { apiPath } from "../files.ts";
 import { ApiError } from "../problem.ts";
 import { ProjectFiles } from "../files.ts";
 import type { Compiler, Workspace } from "../workspace.ts";
+import { exportZip, importZip, MAX_IMPORT_BYTES } from "../zip.ts";
+import { contentDisposition } from "./files.ts";
 
 const COMPILERS = new Set(["pdflatex", "xelatex", "lualatex"]);
 
@@ -89,6 +91,50 @@ export function projectRoutes(
         name === undefined ? undefined : (name as string),
       );
       return reply.code(201).send(copy);
+    },
+  );
+
+  app.post("/api/projects/import", async (request, reply) => {
+    const part = await request.file({ limits: { fileSize: MAX_IMPORT_BYTES } });
+    if (!part)
+      throw new ApiError(
+        400,
+        "validation_failed",
+        'Send the ZIP in a multipart field named "file".',
+      );
+    const bytes = await part.toBuffer().catch(() => {
+      throw new ApiError(
+        413,
+        "archive_too_large",
+        "ZIP files can be at most 200 MB.",
+      );
+    });
+    const nameField = part.fields.name;
+    const requested =
+      nameField &&
+      !Array.isArray(nameField) &&
+      nameField.type === "field" &&
+      typeof nameField.value === "string" &&
+      nameField.value.trim()
+        ? nameField.value.trim()
+        : undefined;
+    const project = await importZip(workspace, bytes, requested, part.filename);
+    return reply.code(201).send(project);
+  });
+
+  app.get<NameParams>(
+    "/api/projects/:name/export.zip",
+    async (request, reply) => {
+      const dir = await workspace.projectDir(request.params.name);
+      const { name } = await workspace.info(request.params.name);
+      return reply
+        .header("content-type", "application/zip")
+        .header(
+          "content-disposition",
+          contentDisposition("attachment", `${name}.zip`),
+        )
+        .header("cache-control", "no-store")
+        .send(exportZip(dir));
     },
   );
 

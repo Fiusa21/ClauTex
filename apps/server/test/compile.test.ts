@@ -205,35 +205,3 @@ describe("compile", () => {
     ).toBe(404);
   });
 });
-
-describe("settings", () => {
-  it("defaults to a 120 s timeout and stores changes in the config folder", async () => {
-    expect((await call(app, "GET", "/api/settings")).json()).toEqual({
-      compileTimeoutSeconds: 120,
-    });
-    expect(
-      (
-        await call(app, "PATCH", "/api/settings", {
-          compileTimeoutSeconds: 300,
-        })
-      ).json(),
-    ).toEqual({
-      compileTimeoutSeconds: 300,
-    });
-    expect(
-      JSON.parse(readFileSync(join(root, "config", "settings.json"), "utf8")),
-    ).toEqual({
-      compileTimeoutSeconds: 300,
-    });
-  });
-
-  it.each([5, 5000, 1.5, "60"])("rejects %j", async (value) => {
-    expect(
-      (
-        await call(app, "PATCH", "/api/settings", {
-          compileTimeoutSeconds: value,
-        })
-      ).statusCode,
-    ).toBe(400);
-  });
-});

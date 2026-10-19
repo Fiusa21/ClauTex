@@ -67,3 +67,21 @@ User-confirmed defaults:
 - **Tests use a fake latexmk written in Node** (`apps/server/test/fake-latexmk.mjs`, produces a valid one-page PDF), selected via `TEXCOLLAB_LATEXMK` (a path or a JSON command array). Real TeX is covered by `compile-real.spec.ts` (`TEXCOLLAB_E2E_REAL_TEX=1`): a CI job installs TeX on Ubuntu; locally it was run against the server inside the `texlive/texlive` image.
 - **E2E never touches the user's real folders**: workspace, cache and config are temporary; `TEXCOLLAB_E2E_SERVER=external` runs the suite against an already running server.
 - **Ctrl/⌘+S saves and compiles; Ctrl/⌘+Enter compiles** (after saving). Clicking an error opens the file and moves the cursor to the line.
+
+## 2026-10-19 (before L4)
+
+User-confirmed defaults:
+- **Docker compile mode uses the `docker` CLI and the full TeX Live image** (`texlive/texlive:latest-full`, pinned by digest, ≈2.8 GB, downloaded on request).
+- **"Open folder" takes a typed/pasted path**; the app keeps a "Recent folders" list. A native folder picker would need a desktop app (later).
+
+## 2026-10-19 (L4)
+
+- **Project ids**: workspace projects keep their folder name as id; opened folders get `ext:<hash of the real path>`. `:` is not allowed in project names, so the two never collide, and the id is stable as long as the folder does not move.
+- **Opened folders are edited in place but not renamed or deleted by the app** (only removed from the list). — They are the user's folders outside the app's workspace; moving or trashing them from a browser tab is too surprising. Duplicating copies them into the workspace. Deleted *files* inside them go to the workspace trash under the folder's name.
+- **Opening the drive root, the home folder, the workspace or a folder inside it is refused.**
+- **Workspace from the command line wins** and is shown read-only in the settings (`workspaceLocked`); otherwise the settings value, otherwise the default.
+- **ZIP via `fflate` 0.8.3** (pure JS, no dependencies). Import validates names before writing and refuses (rather than repairs) archives with absolute or `..` paths; size limits are checked on the declared sizes before unpacking. Export streams and includes `.texcollab.json` so main file and compiler survive the round trip. Found by tests: a ZIP with a single root file was mistaken for "one top-level folder" and stripped.
+- **Docker mode via the `docker` CLI** with a named container, a read-only project mount and only the cache folder writable; the container is removed on timeout. Verified locally with real Docker and the pinned image (compile, error mapping from `/project`, timeout without leftover containers, project folder untouched). Tests use a fake docker CLI (`apps/server/test/fake-docker.mjs`).
+- **The image is downloaded only on request** (settings page, background pull with status polling), never inside a compile's timeout.
+- **E2E runs in one worker**: compile mode and timeout are global server settings that parallel tests would change under each other.
+- **Settings radio buttons use local state** (switch at once, saved in the background, reverted on error). — Found by Playwright: a controlled radio re-rendered only after the server answered.

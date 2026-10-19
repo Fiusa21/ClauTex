@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   copyFile,
   mkdir,
@@ -15,6 +15,7 @@ import { resolveInside } from "../paths.ts";
 import { ApiError } from "../problem.ts";
 import type { SettingsStore } from "../settings.ts";
 import type { Compiler as Engine, Workspace } from "../workspace.ts";
+import { containerUser, dockerRunArgs, type DockerTex } from "./docker.ts";
 import { LogParser, type Issue } from "./logParser.ts";
 import { runWithTimeout } from "./processTree.ts";
 
@@ -45,6 +46,7 @@ export class LocalCompiler {
   private readonly settings: SettingsStore;
   private readonly cacheDir: string;
   private readonly latexmk: () => string[] | null;
+  private readonly docker: DockerTex;
 
   constructor(opts: {
     workspace: Workspace;
@@ -52,21 +54,45 @@ export class LocalCompiler {
     cacheDir: string;
     /** The latexmk command (path + leading args), or null when TeX is not installed. */
     latexmk: () => string[] | null;
+    docker: DockerTex;
   }) {
     this.workspace = opts.workspace;
     this.settings = opts.settings;
     this.cacheDir = opts.cacheDir;
     this.latexmk = opts.latexmk;
+    this.docker = opts.docker;
   }
 
   async compile(projectName: string): Promise<Build> {
-    const command = this.latexmk();
-    if (!command?.[0]) {
-      throw new ApiError(
-        503,
-        "tex_not_found",
-        "No TeX installation was found. See the setup instructions.",
-      );
+    const { compileMode } = await this.settings.get();
+    let command: string[];
+    if (compileMode === "docker") {
+      const info = await this.docker.info();
+      if (!info.available || !this.docker.cli) {
+        throw new ApiError(
+          503,
+          "docker_unavailable",
+          info.problem ?? "Docker is not available.",
+        );
+      }
+      if (!info.imagePresent) {
+        throw new ApiError(
+          503,
+          "docker_image_missing",
+          "The TeX image is not downloaded yet. Download it in the settings (about 2.8 GB).",
+        );
+      }
+      command = this.docker.cli;
+    } else {
+      const local = this.latexmk();
+      if (!local?.[0]) {
+        throw new ApiError(
+          503,
+          "tex_not_found",
+          "No TeX installation was found. See the setup instructions.",
+        );
+      }
+      command = local;
     }
     const dir = await this.workspace.projectDir(projectName);
     const root = await realpath(dir);
@@ -90,7 +116,14 @@ export class LocalCompiler {
     }
     this.running.add(root);
     try {
-      return await this.run(projectName, root, main, compiler, command);
+      return await this.run(
+        projectName,
+        root,
+        main,
+        compiler,
+        command,
+        compileMode === "docker",
+      );
     } finally {
       this.running.delete(root);
     }
@@ -133,6 +166,7 @@ export class LocalCompiler {
     main: string,
     engine: Engine,
     command: string[],
+    inDocker: boolean,
   ): Promise<Build> {
     const out = this.buildDir(root);
     await mkdir(out, { recursive: true });
@@ -143,19 +177,35 @@ export class LocalCompiler {
     const slash = main.lastIndexOf("/");
     const cwd =
       slash < 0 ? root : join(root, ...main.slice(0, slash).split("/"));
-    const args = [
-      ...command.slice(1),
+    const latexmkArgs = (outdir: string) => [
       engineFlag(engine),
       "-interaction=nonstopmode",
       "-halt-on-error",
       "-file-line-error",
       "-no-shell-escape",
       "-norc",
-      `-outdir=${out}`,
+      `-outdir=${outdir}`,
       "-jobname=output",
       // "./name" so a file name can never be read as an option.
       `./${main.slice(slash + 1)}`,
     ];
+    const container = inDocker
+      ? `texcollab-${randomBytes(6).toString("hex")}`
+      : null;
+    const args = container
+      ? [
+          ...command.slice(1),
+          ...dockerRunArgs({
+            name: container,
+            image: this.docker.image,
+            projectDir: root,
+            outDir: out,
+            mainDir: slash < 0 ? "" : main.slice(0, slash),
+            latexmkArgs: latexmkArgs("/out"),
+            user: containerUser(),
+          }),
+        ]
+      : [...command.slice(1), ...latexmkArgs(out)];
     const { compileTimeoutSeconds } = await this.settings.get();
     const started = Date.now();
     const process_ = runWithTimeout(command[0] ?? "latexmk", args, {
@@ -171,10 +221,14 @@ export class LocalCompiler {
       },
       timeoutMs: compileTimeoutSeconds * 1000,
     });
-    this.kills.add(process_.kill);
-    const result = await process_.done.finally(() =>
-      this.kills.delete(process_.kill),
-    );
+    // Killing the docker CLI does not stop its container; remove the container too.
+    const kill = () => {
+      process_.kill();
+      if (container) void this.docker.remove(container);
+    };
+    this.kills.add(kill);
+    const result = await process_.done.finally(() => this.kills.delete(kill));
+    if (container && result.timedOut) await this.docker.remove(container);
     const durationMs = Date.now() - started;
 
     const log = await readCapped(join(out, "output.log"));
@@ -191,9 +245,10 @@ export class LocalCompiler {
     if (status === "success")
       await copyFile(join(out, "output.pdf"), join(out, LAST_GOOD_PDF));
 
-    const errors = new LogParser({ mainFile: main, projectRoot: root }).parse(
-      log,
-    );
+    const errors = new LogParser({
+      mainFile: main,
+      projectRoot: inDocker ? "/project" : root,
+    }).parse(log);
     const excerpt =
       status === "timeout"
         ? `The compile was stopped after ${String(compileTimeoutSeconds)} seconds. Check for infinite loops, or raise the timeout in the settings.`

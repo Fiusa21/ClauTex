@@ -2,13 +2,16 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_DOCKER_IMAGE } from "./compile/docker.ts";
 import { defaultCacheDir, defaultConfigDir } from "./osPaths.ts";
 import { parseArgs } from "node:util";
 
 export interface Config {
   port: number;
-  /** Folder whose subfolders are the projects. */
+  /** Folder whose subfolders are the projects (default, or as given on the command line). */
   workspace: string;
+  /** True when the workspace came from `--workspace`/`TEXCOLLAB_WORKSPACE`; the settings page cannot change it. */
+  workspaceLocked: boolean;
   /** Built web app (apps/web/dist). */
   webDist: string;
   /** Extra origins allowed to call the API (the Vite dev server in `--dev`). */
@@ -19,6 +22,10 @@ export interface Config {
   cacheDir: string;
   /** latexmk command override (path + leading args); null = find `latexmk` on PATH. */
   latexmk: string[] | null;
+  /** docker command override (path + leading args); null = find `docker` on PATH. */
+  docker: string[] | null;
+  /** TeX image for Docker mode. */
+  dockerImage: string;
 }
 
 export const DEFAULT_PORT = 8765;
@@ -65,10 +72,14 @@ export function loadConfig(
   return {
     port,
     workspace,
+    workspaceLocked:
+      (values.workspace ?? env.TEXCOLLAB_WORKSPACE) !== undefined,
     webDist: resolve(here, "..", "..", "web", "dist"),
     configDir: resolve(env.TEXCOLLAB_CONFIG_DIR ?? defaultConfigDir(env)),
     cacheDir: resolve(env.TEXCOLLAB_CACHE_DIR ?? defaultCacheDir(env)),
     latexmk: parseCommand(env.TEXCOLLAB_LATEXMK),
+    docker: parseCommand(env.TEXCOLLAB_DOCKER),
+    dockerImage: env.TEXCOLLAB_DOCKER_IMAGE ?? DEFAULT_DOCKER_IMAGE,
     devOrigins: values.dev
       ? [
           `http://localhost:${String(DEV_SERVER_PORT)}`,

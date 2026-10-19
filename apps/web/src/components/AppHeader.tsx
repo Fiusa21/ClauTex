@@ -6,6 +6,9 @@ export function AppHeader() {
       <Link to="/" className="brand">
         TexCollab
       </Link>
+      <Link to="/settings" className="muted header-link">
+        Settings
+      </Link>
     </header>
   );
 }

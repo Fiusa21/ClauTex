@@ -17,10 +17,13 @@ describe("startServer", () => {
       port: 0,
       workspace,
       webDist: "/nonexistent",
+      workspaceLocked: true,
       devOrigins: [],
       configDir: join(workspace, "..", "config"),
       cacheDir: join(workspace, "..", "cache"),
       latexmk: FAKE_LATEXMK,
+      docker: null,
+      dockerImage: "texlive/texlive:test",
     });
     try {
       const address = app.server.address() as AddressInfo;

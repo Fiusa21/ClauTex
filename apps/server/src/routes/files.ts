@@ -54,7 +54,10 @@ export function fileRoutes(app: FastifyInstance, workspace: Workspace): void {
     "/api/projects/:name/files",
     async (request, reply) => {
       const files = await filesOf(request.params.name);
-      await files.remove(request.query.path, request.params.name);
+      await files.remove(
+        request.query.path,
+        await workspace.label(request.params.name),
+      );
       return reply.code(204).send();
     },
   );

@@ -19,7 +19,10 @@ it("lists projects with links and shows where they are stored", async () => {
     "GET /api/projects": () =>
       Response.json([
         {
+          id: "Thesis & Co",
           name: "Thesis & Co",
+          external: false,
+          path: null,
           mainFile: "main.tex",
           compiler: "pdflatex",
           updatedAt: "2026-10-19T10:00:00Z",

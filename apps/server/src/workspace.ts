@@ -1,13 +1,15 @@
+import { createHash } from "node:crypto";
 import {
   cp,
   mkdir,
   readdir,
   readFile,
+  realpath,
   rename,
   stat,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { normalizePath, normalizeProjectName } from "./paths.ts";
 import { ApiError } from "./problem.ts";
 import { STARTER_MAIN, starterMainTex } from "./starter.ts";
@@ -18,13 +20,23 @@ const COMPILERS = new Set<string>(["pdflatex", "xelatex", "lualatex"]);
 export const CONFIG_FILE = ".texcollab.json";
 export const TRASH_DIR = ".trash";
 
+/** Ids of folders opened from outside the workspace. `:` cannot occur in project names, so ids never clash. */
+export const EXTERNAL_PREFIX = "ext:";
+
 export interface ProjectSettings {
   mainFile: string | null;
   compiler: Compiler;
 }
 
 export interface ProjectInfo extends ProjectSettings {
+  /** Folder name for workspace projects, `ext:<hash>` for opened folders. Used in URLs. */
+  id: string;
+  /** Display name (the folder name). */
   name: string;
+  /** True for folders opened from outside the workspace. */
+  external: boolean;
+  /** Absolute path of opened folders; null for workspace projects. */
+  path: string | null;
   updatedAt: string;
 }
 
@@ -34,24 +46,69 @@ export interface TrashEntry {
   deletedAt: string;
 }
 
+/** Where the absolute paths of opened folders come from (the app settings). */
+export interface FolderRegistry {
+  folders: () => Promise<string[]>;
+}
+
 const notFound = () =>
   new ApiError(404, "project_not_found", "Project not found.");
 
-/** Projects are the non-hidden subfolders of the workspace folder (SPEC §3). */
-export class Workspace {
-  readonly root: string;
+const notForFolders = (what: string) =>
+  new ApiError(
+    400,
+    "not_supported_for_folders",
+    `${what} is not possible for opened folders. Use your file manager, or remove the folder from the list.`,
+  );
 
-  constructor(root: string) {
-    this.root = root;
+/** Stable id for an opened folder, from its real path. */
+export function externalId(realPath: string): string {
+  return `${EXTERNAL_PREFIX}${createHash("sha256").update(realPath).digest("hex").slice(0, 16)}`;
+}
+
+export const isExternalId = (id: string) => id.startsWith(EXTERNAL_PREFIX);
+
+/**
+ * Projects are the non-hidden subfolders of the workspace folder (SPEC §3), plus folders opened from elsewhere
+ * (L4, "open folder"), which are addressed by an `ext:` id.
+ */
+export class Workspace {
+  private rootDir: string;
+  private readonly registry: FolderRegistry;
+
+  constructor(
+    root: string,
+    registry: FolderRegistry = { folders: () => Promise.resolve([]) },
+  ) {
+    this.rootDir = root;
+    this.registry = registry;
+  }
+
+  get root(): string {
+    return this.rootDir;
+  }
+
+  /** Switches to another workspace folder (settings), creating it if needed. */
+  async setRoot(root: string): Promise<void> {
+    await mkdir(root, { recursive: true });
+    this.rootDir = root;
   }
 
   /** Absolute folder of an existing project. */
-  async projectDir(rawName: string): Promise<string> {
-    const name = normalizeProjectName(rawName);
+  async projectDir(id: string): Promise<string> {
+    if (isExternalId(id)) return this.externalDir(id);
+    const name = normalizeProjectName(id);
     const dir = join(this.root, name);
     const info = await stat(dir).catch(() => null);
     if (!info?.isDirectory()) throw notFound();
     return dir;
+  }
+
+  /** A label safe to use as a folder name (for the file trash). */
+  async label(id: string): Promise<string> {
+    return isExternalId(id)
+      ? basename(await this.projectDir(id))
+      : normalizeProjectName(id);
   }
 
   async list(): Promise<ProjectInfo[]> {
@@ -66,14 +123,24 @@ export class Workspace {
         // not a usable project folder (broken symlink, invalid name, …)
       }
     }
+    for (const folder of await this.registry.folders()) {
+      try {
+        projects.push(await this.info(externalId(await realpath(folder))));
+      } catch {
+        // the folder is gone; it stays in the settings until the user removes it
+      }
+    }
     return projects.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
-  async info(rawName: string): Promise<ProjectInfo> {
-    const dir = await this.projectDir(rawName);
-    const name = normalizeProjectName(rawName);
+  async info(id: string): Promise<ProjectInfo> {
+    const dir = await this.projectDir(id);
+    const external = isExternalId(id);
     return {
-      name,
+      id: external ? id : normalizeProjectName(id),
+      name: external ? basename(dir) : normalizeProjectName(id),
+      external,
+      path: external ? dir : null,
       ...(await this.settings(dir)),
       updatedAt: (await latestMtime(dir)).toISOString(),
     };
@@ -89,8 +156,9 @@ export class Workspace {
     return this.info(name);
   }
 
-  async rename(rawName: string, rawNewName: string): Promise<string> {
-    const from = await this.projectDir(rawName);
+  async rename(id: string, rawNewName: string): Promise<string> {
+    if (isExternalId(id)) throw notForFolders("Renaming");
+    const from = await this.projectDir(id);
     const newName = normalizeProjectName(rawNewName);
     const to = join(this.root, newName);
     // A case-only rename ("thesis" → "Thesis") finds the same folder on case-insensitive file systems.
@@ -107,12 +175,13 @@ export class Workspace {
     return newName;
   }
 
-  async duplicate(rawName: string, rawNewName?: string): Promise<ProjectInfo> {
-    const from = await this.projectDir(rawName);
+  /** Copies a project (or an opened folder) into the workspace. */
+  async duplicate(id: string, rawNewName?: string): Promise<ProjectInfo> {
+    const from = await this.projectDir(id);
     const name =
       rawNewName !== undefined
         ? normalizeProjectName(rawNewName)
-        : await this.freeName(`Copy of ${normalizeProjectName(rawName)}`);
+        : await this.freeName(`Copy of ${basename(from)}`);
     const to = join(this.root, name);
     await mkdirNew(to, name);
     await cp(from, to, {
@@ -125,17 +194,28 @@ export class Workspace {
   }
 
   /** Moves a project to `<workspace>/.trash/<name>~<timestamp>` (restorable). */
-  async trash(rawName: string): Promise<void> {
-    const dir = await this.projectDir(rawName);
+  async trash(id: string): Promise<void> {
+    if (isExternalId(id)) throw notForFolders("Deleting");
+    const dir = await this.projectDir(id);
     await mkdir(join(this.root, TRASH_DIR), { recursive: true });
     await rename(
       dir,
-      join(
-        this.root,
-        TRASH_DIR,
-        `${normalizeProjectName(rawName)}~${timestamp()}`,
-      ),
+      join(this.root, TRASH_DIR, `${normalizeProjectName(id)}~${timestamp()}`),
     );
+  }
+
+  private async externalDir(id: string): Promise<string> {
+    for (const folder of await this.registry.folders()) {
+      const real = await realpath(folder).catch(() => null);
+      if (
+        real &&
+        externalId(real) === id &&
+        (await stat(real).catch(() => null))?.isDirectory()
+      ) {
+        return real;
+      }
+    }
+    throw notFound();
   }
 
   async listTrash(): Promise<TrashEntry[]> {

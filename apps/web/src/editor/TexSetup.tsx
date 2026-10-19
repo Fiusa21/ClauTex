@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { errorMessage } from "../api/client.ts";
 import { useDetectTex, type TexInfo } from "../api/health.ts";
 
@@ -74,6 +75,10 @@ export function TexSetup({ tex }: { tex: TexInfo }) {
       >
         {detect.isPending ? "Checking…" : "Check again"}
       </button>
+      <p className="muted">
+        No TeX? With Docker installed you can compile in a container instead:{" "}
+        <Link to="/settings">Settings</Link>.
+      </p>
       {detect.isError && (
         <p className="form-error">{errorMessage(detect.error)}</p>
       )}

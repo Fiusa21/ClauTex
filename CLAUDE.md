@@ -32,4 +32,4 @@ Before adding a dependency, check its current name, version and maintenance stat
 - Develop with hot reload: `npm run dev` → http://localhost:5173 (Vite, proxies `/api` to the server)
 - Lint / typecheck / unit tests (all packages): `npm run lint` · `npm run typecheck` · `npm test`
 - E2E: `npm run e2e` (starts the app against temporary workspace/cache/config folders, with a fake latexmk). Real TeX: `TEXCOLLAB_E2E_REAL_TEX=1 npm run e2e`. Against a running server (e.g. in a TeX container): `TEXCOLLAB_E2E_SERVER=external TEXCOLLAB_E2E_WORKSPACE=<its workspace>`.
-- Tests that compile use `apps/server/test/fake-latexmk.mjs` via `TEXCOLLAB_LATEXMK` (path or JSON command array).
+- Tests that compile use `apps/server/test/fake-latexmk.mjs` via `TEXCOLLAB_LATEXMK` and `apps/server/test/fake-docker.mjs` via `TEXCOLLAB_DOCKER` (path or JSON command array). E2E runs in a single worker because settings are global.

@@ -7,8 +7,10 @@ import type { Config } from "./config.ts";
 import { createGuard } from "./guard.ts";
 import { ApiError, sendProblem } from "./problem.ts";
 import { LocalCompiler } from "./compile/compiler.ts";
+import { DockerTex } from "./compile/docker.ts";
 import { compileRoutes } from "./routes/compile.ts";
 import { fileRoutes } from "./routes/files.ts";
+import { settingsRoutes } from "./routes/settings.ts";
 import { SettingsStore } from "./settings.ts";
 import { detectTex, findExecutable, type TexInfo } from "./tex.ts";
 import { eventRoutes } from "./routes/events.ts";
@@ -61,12 +63,22 @@ export async function buildApp(
   await app.register(fastifyMultipart, {
     limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 4 },
   });
-  const workspace = new Workspace(config.workspace);
+
+  const settings = new SettingsStore(config.configDir);
+  const stored = await settings.get();
+  // The command line wins over the settings page; the default comes last.
+  const workspace = new Workspace(
+    config.workspaceLocked
+      ? config.workspace
+      : (stored.workspace ?? config.workspace),
+    { folders: async () => (await settings.get()).recentFolders },
+  );
+  await workspace.setRoot(workspace.root);
+
   projectRoutes(app, workspace);
   fileRoutes(app, workspace);
   eventRoutes(app, workspace);
 
-  const settings = new SettingsStore(config.configDir);
   // TeX detection runs once at startup (and on request); compiling uses the command it found.
   let tex: TexInfo = await detectTex(config.latexmk);
   const latexmkCommand = (): string[] | null => {
@@ -75,11 +87,22 @@ export async function buildApp(
     const found = findExecutable("latexmk");
     return found ? [found] : null;
   };
+  const dockerPath = findExecutable("docker");
+  const docker = new DockerTex(
+    config.docker ?? (dockerPath ? [dockerPath] : null),
+    config.dockerImage,
+  );
   const compiler = new LocalCompiler({
     workspace,
     settings,
     cacheDir: config.cacheDir,
     latexmk: latexmkCommand,
+    docker,
+  });
+  app.get("/api/docker", () => docker.info());
+  app.post("/api/docker/pull", () => {
+    docker.pull();
+    return docker.info();
   });
   compileRoutes(app, compiler);
   app.addHook("onClose", () => {
@@ -89,7 +112,7 @@ export async function buildApp(
   app.get("/api/health", () => ({
     status: "UP",
     version: VERSION,
-    workspace: config.workspace,
+    workspace: workspace.root,
     tex,
   }));
 
@@ -98,8 +121,12 @@ export async function buildApp(
     return tex;
   });
 
-  app.get("/api/settings", () => settings.get());
-  app.patch("/api/settings", (request) => settings.update(request.body));
+  settingsRoutes(app, {
+    settings,
+    workspace,
+    workspaceLocked: config.workspaceLocked,
+    defaultWorkspace: config.workspace,
+  });
 
   const hasWeb = existsSync(join(config.webDist, "index.html"));
   if (hasWeb) {

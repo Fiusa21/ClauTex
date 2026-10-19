@@ -1,16 +1,20 @@
-import { useId, useState, type SubmitEvent } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useId, useRef, useState, type SubmitEvent } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { useHealth } from "../api/health.ts";
 import {
+  exportUrl,
+  projectPage,
   useCreateProject,
   useDeleteProject,
   useDuplicateProject,
+  useImportZip,
   useProjects,
   useRenameProject,
   useRestoreProject,
   useTrash,
   type Project,
 } from "../api/projects.ts";
+import { useOpenFolder, useRemoveFolder } from "../api/settings.ts";
 import { AppHeader } from "../components/AppHeader.tsx";
 import { ErrorPanel } from "../components/ErrorPanel.tsx";
 import { FormError } from "../components/FormError.tsx";
@@ -53,7 +57,8 @@ export function ProjectsPage() {
         {health.isError && <ErrorPanel error={health.error} />}
         {health.data && (
           <p className="muted workspace-path" data-testid="workspace">
-            Stored in <code>{health.data.workspace}</code>
+            Stored in <code>{health.data.workspace}</code> ·{" "}
+            <Link to="/settings">Change</Link>
           </p>
         )}
         {trash ? <TrashList /> : <ActiveProjects />}
@@ -64,20 +69,36 @@ export function ProjectsPage() {
 
 function ActiveProjects() {
   const projects = useProjects();
+  const own = projects.data?.filter((p) => !p.external) ?? [];
+  const opened = projects.data?.filter((p) => p.external) ?? [];
   return (
     <>
       <CreateProjectForm />
+      <div className="secondary-actions">
+        <ImportZipButton />
+        <OpenFolderForm />
+      </div>
       {projects.isPending && <p className="page-status">Loading projects…</p>}
       {projects.isError && <ErrorPanel error={projects.error} />}
-      {projects.data?.length === 0 && (
+      {projects.data && own.length === 0 && opened.length === 0 && (
         <p className="empty">No projects yet. Create your first one above.</p>
       )}
-      {projects.data && projects.data.length > 0 && (
+      {own.length > 0 && (
         <ul className="project-list" aria-label="Projects">
-          {projects.data.map((p) => (
-            <ProjectRow key={p.name} project={p} />
+          {own.map((p) => (
+            <ProjectRow key={p.id} project={p} />
           ))}
         </ul>
+      )}
+      {opened.length > 0 && (
+        <>
+          <h2>Opened folders</h2>
+          <ul className="project-list" aria-label="Opened folders">
+            {opened.map((p) => (
+              <ProjectRow key={p.id} project={p} />
+            ))}
+          </ul>
+        </>
       )}
     </>
   );
@@ -119,12 +140,110 @@ function CreateProjectForm() {
   );
 }
 
+function ImportZipButton() {
+  const input = useRef<HTMLInputElement>(null);
+  const importZip = useImportZip();
+  const navigate = useNavigate();
+  return (
+    <div className="inline-action">
+      <button
+        type="button"
+        className="button ghost"
+        disabled={importZip.isPending}
+        onClick={() => input.current?.click()}
+      >
+        {importZip.isPending ? "Importing…" : "Import ZIP"}
+      </button>
+      <input
+        ref={input}
+        type="file"
+        accept=".zip,application/zip"
+        hidden
+        data-testid="import-input"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) {
+            importZip.mutate(file, {
+              onSuccess: (project) => void navigate(projectPage(project.id)),
+            });
+          }
+        }}
+      />
+      <FormError error={importZip.error} />
+    </div>
+  );
+}
+
+function OpenFolderForm() {
+  const [open, setOpen] = useState(false);
+  const [path, setPath] = useState("");
+  const openFolder = useOpenFolder();
+  const navigate = useNavigate();
+  const inputId = useId();
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        className="button ghost"
+        onClick={() => {
+          setOpen(true);
+        }}
+      >
+        Open folder…
+      </button>
+    );
+  }
+  return (
+    <form
+      className="open-folder-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        openFolder.mutate(path.trim(), {
+          onSuccess: (project) => void navigate(projectPage(project.id)),
+        });
+      }}
+    >
+      <label htmlFor={inputId}>Folder path</label>
+      <input
+        id={inputId}
+        autoFocus
+        required
+        placeholder="/Users/me/thesis  or  C:\Users\me\thesis"
+        value={path}
+        onChange={(e) => {
+          setPath(e.target.value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false);
+        }}
+      />
+      <button className="button primary" disabled={openFolder.isPending}>
+        Open
+      </button>
+      <button
+        type="button"
+        className="button ghost"
+        onClick={() => {
+          setOpen(false);
+        }}
+      >
+        Cancel
+      </button>
+      <FormError error={openFolder.error} />
+    </form>
+  );
+}
+
 function ProjectRow({ project }: { project: Project }) {
   const [editing, setEditing] = useState(false);
   const rename = useRenameProject();
   const remove = useDeleteProject();
   const duplicate = useDuplicateProject();
-  const error = rename.error ?? remove.error ?? duplicate.error;
+  const removeFolder = useRemoveFolder();
+  const error =
+    rename.error ?? remove.error ?? duplicate.error ?? removeFolder.error;
 
   return (
     <li className="project-row" data-testid="project-row">
@@ -138,7 +257,7 @@ function ProjectRow({ project }: { project: Project }) {
             }}
             onSave={(newName) => {
               rename.mutate(
-                { name: project.name, newName },
+                { id: project.id, newName },
                 {
                   onSuccess: () => {
                     setEditing(false);
@@ -148,21 +267,19 @@ function ProjectRow({ project }: { project: Project }) {
             }}
           />
         ) : (
-          <Link
-            className="project-name"
-            to={`/project/${encodeURIComponent(project.name)}`}
-          >
+          <Link className="project-name" to={projectPage(project.id)}>
             {project.name}
           </Link>
         )}
         <span className="project-meta muted">
+          {project.path && <code className="project-path">{project.path}</code>}
           <span>Updated {formatDateTime(project.updatedAt)}</span>
           {project.mainFile && <span>Main file: {project.mainFile}</span>}
         </span>
         <FormError error={error} />
       </div>
       <div className="row-actions">
-        {!editing && (
+        {!project.external && !editing && (
           <button
             type="button"
             className="button ghost"
@@ -178,28 +295,46 @@ function ProjectRow({ project }: { project: Project }) {
           type="button"
           className="button ghost"
           disabled={duplicate.isPending}
+          title={project.external ? "Copy into the workspace" : undefined}
           onClick={() => {
-            duplicate.mutate(project.name);
+            duplicate.mutate(project.id);
           }}
         >
           Duplicate
         </button>
-        <button
-          type="button"
-          className="button ghost danger"
-          disabled={remove.isPending}
-          onClick={() => {
-            if (
-              window.confirm(
-                `Move “${project.name}” to the trash? You can restore it from Trash.`,
-              )
-            ) {
-              remove.mutate(project.name);
-            }
-          }}
-        >
-          Delete
-        </button>
+        <a className="button ghost" href={exportUrl(project.id)} download>
+          Export
+        </a>
+        {project.external ? (
+          <button
+            type="button"
+            className="button ghost"
+            disabled={removeFolder.isPending}
+            title="The folder stays on disk"
+            onClick={() => {
+              if (project.path) removeFolder.mutate(project.path);
+            }}
+          >
+            Remove from list
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="button ghost danger"
+            disabled={remove.isPending}
+            onClick={() => {
+              if (
+                window.confirm(
+                  `Move “${project.name}” to the trash? You can restore it from Trash.`,
+                )
+              ) {
+                remove.mutate(project.id);
+              }
+            }}
+          >
+            Delete
+          </button>
+        )}
       </div>
     </li>
   );

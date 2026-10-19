@@ -1,0 +1,22 @@
+{
+  "name": "texcollab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A lightweight local LaTeX editor",
+  "workspaces": [
+    "apps/web",
+    "apps/server"
+  ],
+  "engines": {
+    "node": ">=24.15"
+  },
+  "scripts": {
+    "start": "npm run build --workspace @texcollab/web && npm run start --workspace @texcollab/server --",
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build --workspace @texcollab/web",
+    "lint": "npm run lint --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "test": "npm run test --workspaces",
+    "e2e": "npm run build --workspace @texcollab/web && npm run e2e --workspace @texcollab/web"
+  }
+}

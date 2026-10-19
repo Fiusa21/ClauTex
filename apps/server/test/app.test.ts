@@ -17,10 +17,11 @@ describe("GET /api/health", () => {
       headers: { host: HOST },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({
+    expect(res.json()).toMatchObject({
       status: "UP",
       version: "0.1.0",
       workspace: t.workspace,
+      tex: { available: true, version: "Latexmk (fake) Version 0" },
     });
   });
 });

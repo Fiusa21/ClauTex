@@ -1,6 +1,8 @@
+import { lazy, Suspense } from "react";
 import { logUrl, type Build, type CompileIssue } from "../api/compile.ts";
 import { errorMessage } from "../api/client.ts";
-import { lazy, Suspense } from "react";
+import type { TexInfo } from "../api/health.ts";
+import { TexSetup } from "./TexSetup.tsx";
 
 // pdf.js is large; load it only when there is a PDF to show.
 const PdfViewer = lazy(async () => ({
@@ -15,23 +17,33 @@ const STATUS_TEXT: Record<Build["status"], string> = {
 };
 
 interface Props {
-  projectId: string;
-  build: Build | undefined;
+  project: string;
+  build: Build | null | undefined;
+  tex: TexInfo | undefined;
   compiling: boolean;
   compileError: unknown;
   onJump: (issue: CompileIssue) => void;
 }
 
-/** PDF of the latest build plus its errors and warnings. */
+/** PDF of the last successful build plus the errors and warnings of the latest one. */
 export function CompilePanel({
-  projectId,
+  project,
   build,
+  tex,
   compiling,
   compileError,
   onJump,
 }: Props) {
+  if (tex && !tex.available) {
+    return (
+      <section className="compile-panel" aria-label="PDF preview">
+        <TexSetup tex={tex} />
+      </section>
+    );
+  }
   const errors = build?.errors.filter((e) => e.level === "error") ?? [];
   const warnings = build?.errors.filter((e) => e.level === "warning") ?? [];
+  const stalePdf = build?.pdfUrl && !build.pdfIsFresh;
 
   return (
     <section className="compile-panel" aria-label="PDF preview">
@@ -50,7 +62,7 @@ export function CompilePanel({
         {build && (
           <a
             className="muted log-link"
-            href={logUrl(projectId, build.buildId)}
+            href={logUrl(project)}
             target="_blank"
             rel="noreferrer"
           >
@@ -88,6 +100,11 @@ export function CompilePanel({
             ))}
           </ul>
         </div>
+      )}
+      {stalePdf && (
+        <p className="stale-note muted" data-testid="stale-pdf">
+          Showing the last successful PDF.
+        </p>
       )}
       {build?.pdfUrl ? (
         <Suspense

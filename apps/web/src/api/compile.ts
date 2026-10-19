@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "./client.ts";
-import { projectKeys, type Compiler, type Project } from "./projects.ts";
+import {
+  projectKeys,
+  projectUrl,
+  type Compiler,
+  type Project,
+} from "./projects.ts";
 
 export type BuildStatus = "success" | "failure" | "timeout" | "error";
 
@@ -12,58 +17,52 @@ export interface CompileIssue {
 }
 
 export interface Build {
-  buildId: string;
   status: BuildStatus;
   errors: CompileIssue[];
   logExcerpt: string;
-  pdfUrl: string | null;
   durationMs: number;
   createdAt: string;
+  /** Last successful PDF (possibly from an earlier build). */
+  pdfUrl: string | null;
+  /** True when this build produced the PDF. */
+  pdfIsFresh: boolean;
 }
 
-const buildsKey = (projectId: string) => ["builds", projectId] as const;
+const buildKey = (project: string) => ["build", project] as const;
 
-export const logUrl = (projectId: string, buildId: string) =>
-  `/api/projects/${encodeURIComponent(projectId)}/builds/${encodeURIComponent(buildId)}/output.log`;
+export const logUrl = (project: string) => `${projectUrl(project)}/output.log`;
 
-/** Recent builds, newest first. */
-export function useBuilds(projectId: string) {
+/** The last build, so the PDF shows again when a project is reopened. */
+export function useLastBuild(project: string) {
   return useQuery({
-    queryKey: buildsKey(projectId),
-    queryFn: () =>
-      api<Build[]>(
-        "GET",
-        `/api/projects/${encodeURIComponent(projectId)}/builds`,
-      ),
+    queryKey: buildKey(project),
+    queryFn: async () =>
+      (
+        await api<{ build: Build | null }>(
+          "GET",
+          `${projectUrl(project)}/build`,
+        )
+      ).build,
   });
 }
 
-export function useCompile(projectId: string) {
+export function useCompile(project: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () =>
-      api<Build>(
-        "POST",
-        `/api/projects/${encodeURIComponent(projectId)}/compile`,
-      ),
+    mutationFn: () => api<Build>("POST", `${projectUrl(project)}/compile`),
     onSuccess: (build) => {
-      queryClient.setQueryData<Build[]>(buildsKey(projectId), (old) => [
-        build,
-        ...(old ?? []).filter((b) => b.buildId !== build.buildId),
-      ]);
+      queryClient.setQueryData(buildKey(project), build);
     },
   });
 }
 
-export function useSetCompiler(projectId: string) {
+export function useSetCompiler(project: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (compiler: Compiler) =>
-      api<Project>("PATCH", `/api/projects/${encodeURIComponent(projectId)}`, {
-        compiler,
-      }),
-    onSuccess: (project) => {
-      queryClient.setQueryData(projectKeys.detail(projectId), project);
+      api<Project>("PATCH", projectUrl(project), { compiler }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectKeys.detail(project), updated);
     },
   });
 }

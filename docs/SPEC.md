@@ -53,8 +53,9 @@ Workspace folder: `TEXCOLLAB_WORKSPACE` env var or `--workspace <dir>`; default 
 All under `/api`, JSON, errors as RFC 7807 problem+json with a stable `code`.
 
 Health and settings
-- `GET /api/health` → `{ status, version, workspace, tex: { available, latexmk, engines[], docker } }`
-- `GET /api/settings`, `PATCH /api/settings` {workspace?, compileMode?: "local" | "docker"}; stored in the OS config folder.
+- `GET /api/health` → `{ status, version, workspace, tex: { available, version, engines: { pdflatex, xelatex, lualatex }, problem } }` (TeX is detected at startup)
+- `POST /api/tex/detect` — look for TeX again (after installing it)
+- `GET /api/settings`, `PATCH /api/settings` {compileTimeoutSeconds (10–1800, default 120)}; stored as `settings.json` in the OS config folder (`%APPDATA%\TexCollab`, `~/Library/Application Support/TexCollab`, `$XDG_CONFIG_HOME/texcollab`). Workspace and compile mode follow in L4.
 
 Projects
 - `GET /api/projects` — name, updatedAt (latest file mtime), mainFile
@@ -75,8 +76,9 @@ Files
 - `GET /api/projects/{name}/events` — server-sent events: `ready`, then `change` with `{ paths }` (project-relative, batched over 150 ms, hidden entries skipped) for any change on disk, including the app's own saves; `unavailable` if the folder cannot be watched
 
 Compile
-- `POST /api/projects/{name}/compile` → `{ status, errors, logExcerpt, pdfUrl, durationMs }`
-- `GET /api/projects/{name}/output.pdf`, `GET /api/projects/{name}/output.log`
+- `POST /api/projects/{name}/compile` → `{ status: success|failure|timeout|error, errors, logExcerpt, durationMs, createdAt, pdfUrl, pdfIsFresh }`. `pdfUrl` points at the last *successful* PDF (also after a failed build; `pdfIsFresh` tells which). `409 compile_in_progress` (one per project), `503 tex_not_found`, `400 main_file_not_found`.
+- `GET /api/projects/{name}/build` → `{ build }` — the last build (shown when the project is reopened)
+- `GET /api/projects/{name}/output.pdf[?download=true]` (last successful PDF), `GET /api/projects/{name}/output.log`
 
 ## 5. Local security
 
@@ -94,12 +96,13 @@ Local mode (default):
 2. Run `latexmk` **without a shell** (argument array): `-<engine> -interaction=nonstopmode -halt-on-error -file-line-error -no-shell-escape -norc -outdir=<cache dir> -jobname=output ./<main file>` in the main file's folder.
    - `-norc`: project `.latexmkrc` files are not executed (they are Perl and would bypass `-no-shell-escape`). A per-project opt-in may come later.
    - Environment: `max_print_line=10000`, `error_line=254`, `half_error_line=238`, `openout_any=p`.
-3. Hard timeout 60 s: kill the whole process tree (POSIX: process group; Windows: `taskkill /T /F`). One compile per project at a time.
-4. Parse the log (§6.1) and return errors, a log excerpt and the PDF URL. Output size cap 50 MB.
+   - The output folder is `<cache>/builds/<hash of the project's real path>`; the project's folder structure is mirrored into it first (`\include{chapters/x}` writes `chapters/x.aux` there).
+3. Timeout from the settings (default 120 s): kill the whole process tree (POSIX: the child leads its own process group, killed with SIGKILL; Windows: `taskkill /T /F`). One compile per project at a time. Running compiles are killed when the server stops.
+4. Parse the log (§6.1) and return errors, a log excerpt and the PDF URL. A successful PDF is kept as the "last good" PDF. No output size cap locally (it is the user's own machine).
 
-TeX detection at startup and in `/api/health`: `latexmk -v` and the engines on `PATH`; the UI shows install instructions per OS when missing (latexmk on Windows needs Perl, which TeX Live ships; MiKTeX installs it on demand).
+TeX detection at startup and in `/api/health`: `latexmk -v` and the engines on `PATH` (on Windows only `.exe` files, since Node cannot start `.bat`/`.cmd` without a shell; TeX Live and MiKTeX ship `latexmk.exe`); the UI shows install instructions per OS when missing (latexmk on Windows needs Perl, which TeX Live ships; MiKTeX installs it on demand).
 
-Docker mode (optional, when TeX is missing): the same command in `texlive/texlive:latest-full` pinned by digest, via the `docker` CLI, with sandbox flags (no network, read-only, non-root, CPU/memory/pids limits, sources via stdin tar).
+Docker mode (optional, when TeX is missing; L4): the same command in `texlive/texlive:latest-full` pinned by digest, via the `docker` CLI, with sandbox flags (no network, read-only, non-root, CPU/memory/pids limits, sources via stdin tar).
 
 ### 6.1 Log parsing
 `file:line:` errors, `!` errors with `l.N`, LaTeX/package warnings with input lines, over/underfull boxes; TeX's follow-up messages after an error are dropped; paths are mapped back to project paths and never outside the project; at most 100 issues.
@@ -125,10 +128,10 @@ L2 — Editor
 - ✔ Edit, autosave, reload: content is on disk. A file changed by another program updates in the editor; a conflicting edit asks the user.
 
 L3 — Compile
-- ✔ Starter project compiles with local TeX; an error shows file + line and jumps there; `\write18` does nothing; an infinite loop is killed after 60 s with no leftover processes (Linux, macOS, Windows). Docker mode compiles when selected.
+- ✔ Starter project compiles with local TeX; an error shows file + line and jumps there; `\write18` does nothing; an infinite loop is killed at the timeout with no leftover processes (Linux with real TeX; process-tree kill on all OSes with a fake latexmk).
 
 L4 — Polish
-- ✔ ZIP round-trip preserves all files; settings (workspace, compile mode) persist; README has setup steps for each OS.
+- ✔ ZIP round-trip preserves all files; settings (workspace, compile mode, timeout) editable in the UI and persisted; Docker mode compiles when selected; "open any folder"; README has setup steps for each OS.
 
 Later: a hosted, collaborative version (accounts, sharing, real-time editing) could reuse the editor and compile UI.
 

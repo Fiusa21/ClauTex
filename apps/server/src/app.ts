@@ -6,7 +6,11 @@ import { join, sep } from "node:path";
 import type { Config } from "./config.ts";
 import { createGuard } from "./guard.ts";
 import { ApiError, sendProblem } from "./problem.ts";
+import { LocalCompiler } from "./compile/compiler.ts";
+import { compileRoutes } from "./routes/compile.ts";
 import { fileRoutes } from "./routes/files.ts";
+import { SettingsStore } from "./settings.ts";
+import { detectTex, findExecutable, type TexInfo } from "./tex.ts";
 import { eventRoutes } from "./routes/events.ts";
 import { projectRoutes } from "./routes/projects.ts";
 import { MAX_UPLOAD_BYTES } from "./textFiles.ts";
@@ -62,11 +66,40 @@ export async function buildApp(
   fileRoutes(app, workspace);
   eventRoutes(app, workspace);
 
+  const settings = new SettingsStore(config.configDir);
+  // TeX detection runs once at startup (and on request); compiling uses the command it found.
+  let tex: TexInfo = await detectTex(config.latexmk);
+  const latexmkCommand = (): string[] | null => {
+    if (!tex.available) return null;
+    if (config.latexmk) return config.latexmk;
+    const found = findExecutable("latexmk");
+    return found ? [found] : null;
+  };
+  const compiler = new LocalCompiler({
+    workspace,
+    settings,
+    cacheDir: config.cacheDir,
+    latexmk: latexmkCommand,
+  });
+  compileRoutes(app, compiler);
+  app.addHook("onClose", () => {
+    compiler.stopAll();
+  });
+
   app.get("/api/health", () => ({
     status: "UP",
     version: VERSION,
     workspace: config.workspace,
+    tex,
   }));
+
+  app.post("/api/tex/detect", async () => {
+    tex = await detectTex(config.latexmk);
+    return tex;
+  });
+
+  app.get("/api/settings", () => settings.get());
+  app.patch("/api/settings", (request) => settings.update(request.body));
 
   const hasWeb = existsSync(join(config.webDist, "index.html"));
   if (hasWeb) {

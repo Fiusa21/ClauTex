@@ -6,6 +6,12 @@ import { buildApp } from "../src/app.ts";
 import type { Config } from "../src/config.ts";
 
 export const PORT = 8765;
+
+/** A cross-platform stand-in for latexmk (see fake-latexmk.mjs). */
+export const FAKE_LATEXMK = [
+  process.execPath,
+  join(import.meta.dirname, "fake-latexmk.mjs"),
+];
 export const HOST = `localhost:${String(PORT)}`;
 
 /** An app with a temporary workspace and a minimal built web app. */
@@ -25,6 +31,9 @@ export async function testApp(overrides: Partial<Config> = {}) {
     workspace,
     webDist,
     devOrigins: [],
+    configDir: join(root, "config"),
+    cacheDir: join(root, "cache"),
+    latexmk: FAKE_LATEXMK,
     ...overrides,
   });
   return { app, root, workspace };

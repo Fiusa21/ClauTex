@@ -48,3 +48,22 @@ User-confirmed defaults:
 - **Live changes via one recursive `fs.watch` per open project**, shared by all browser tabs, batched over 150 ms, sent as server-sent events. The app's own saves also produce events; the editor recognizes them by ETag. The file tree refreshes on every event.
 - **Save logic is a framework-free class (`EditorSync`)**, unit-tested with fake timers: debounced autosave, one save at a time (edits during a save are saved afterwards against the new version), conflict on 409 or on an external change while dirty (autosave pauses until the user decides), silent reload when clean, write-on-close with `fetch(…, { keepalive: true })`. — React's hook rules (and testability) argued against keeping it in the component.
 - **CodeMirror's own history** for undo/redo; LaTeX highlighting (sTeX mode), completions and theme are our own extension set.
+
+## 2026-10-19 (before L3)
+
+User-confirmed defaults:
+- **Build output stays in the OS cache folder**; the UI offers "Download PDF". Nothing is written into project folders.
+- **Compile timeout is an app setting, default 120 s** (SPEC said 60 s; big local projects with biber need more).
+- **Docker compile mode moves to L4**; L3 is local TeX only.
+
+## 2026-10-19 (L3)
+
+- **latexmk runs without a shell**, with `-no-shell-escape -norc -interaction=nonstopmode -halt-on-error -file-line-error -outdir=<cache> -jobname=output ./<main>` from the main file's folder; environment adds `max_print_line=10000` (unwrapped logs) and `openout_any=p`.
+- **Process-tree kill**: on POSIX the child is started `detached` (own process group) and the group gets SIGKILL; on Windows `taskkill /T /F`. Verified with a fake latexmk that spawns a grandchild (all OSes in CI) and with real TeX on Linux (no leftover processes; under a PID-1 server without init a killed `pdflatex` stays a zombie until reaped — normal desktops reap it, `docker run --init` too).
+- **Build output in `<cache>/builds/<hash of the project's real path>`**, folders mirrored first for `\include`. The last *successful* PDF is kept (`latest.pdf`) and stays visible after a failed build ("Showing the last successful PDF"); `build.json` stores the last build for reopening.
+- **No 50 MB output cap locally.** — Large theses can legitimately exceed it, and there is no shared server to protect.
+- **No global compile queue locally**; only one compile per project at a time.
+- **TeX detection** (`latexmk -v` plus engines on PATH) at startup and on "Check again"; on Windows only `.exe` files are considered (Node cannot spawn `.bat`/`.cmd` without a shell). A setup panel with per-OS instructions replaces the PDF pane when TeX is missing.
+- **Tests use a fake latexmk written in Node** (`apps/server/test/fake-latexmk.mjs`, produces a valid one-page PDF), selected via `TEXCOLLAB_LATEXMK` (a path or a JSON command array). Real TeX is covered by `compile-real.spec.ts` (`TEXCOLLAB_E2E_REAL_TEX=1`): a CI job installs TeX on Ubuntu; locally it was run against the server inside the `texlive/texlive` image.
+- **E2E never touches the user's real folders**: workspace, cache and config are temporary; `TEXCOLLAB_E2E_SERVER=external` runs the suite against an already running server.
+- **Ctrl/⌘+S saves and compiles; Ctrl/⌘+Enter compiles** (after saving). Clicking an error opens the file and moves the cursor to the line.

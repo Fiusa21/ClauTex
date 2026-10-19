@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultCacheDir, defaultConfigDir } from "./osPaths.ts";
 import { parseArgs } from "node:util";
 
 export interface Config {
@@ -12,6 +13,12 @@ export interface Config {
   webDist: string;
   /** Extra origins allowed to call the API (the Vite dev server in `--dev`). */
   devOrigins: string[];
+  /** App settings (OS config folder). */
+  configDir: string;
+  /** Build output (OS cache folder). */
+  cacheDir: string;
+  /** latexmk command override (path + leading args); null = find `latexmk` on PATH. */
+  latexmk: string[] | null;
 }
 
 export const DEFAULT_PORT = 8765;
@@ -59,6 +66,9 @@ export function loadConfig(
     port,
     workspace,
     webDist: resolve(here, "..", "..", "web", "dist"),
+    configDir: resolve(env.TEXCOLLAB_CONFIG_DIR ?? defaultConfigDir(env)),
+    cacheDir: resolve(env.TEXCOLLAB_CACHE_DIR ?? defaultCacheDir(env)),
+    latexmk: parseCommand(env.TEXCOLLAB_LATEXMK),
     devOrigins: values.dev
       ? [
           `http://localhost:${String(DEV_SERVER_PORT)}`,
@@ -66,4 +76,23 @@ export function loadConfig(
         ]
       : [],
   };
+}
+
+/** `TEXCOLLAB_LATEXMK`: a path, or a JSON array such as `["node", "fake-latexmk.mjs"]` (used by tests). */
+export function parseCommand(raw: string | undefined): string[] | null {
+  if (!raw) return null;
+  if (raw.trim().startsWith("[")) {
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length === 0 ||
+      !parsed.every((p) => typeof p === "string")
+    ) {
+      throw new Error(
+        "TEXCOLLAB_LATEXMK must be a path or a JSON array of strings",
+      );
+    }
+    return parsed;
+  }
+  return [raw];
 }

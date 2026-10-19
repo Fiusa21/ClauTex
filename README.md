@@ -4,12 +4,12 @@ A lightweight LaTeX editor that runs locally. Clone it, start it with one comman
 
 Spec: [`docs/SPEC.md`](docs/SPEC.md) · Decisions: [`docs/DECISIONS.md`](docs/DECISIONS.md) · Contributor rules: [`CLAUDE.md`](CLAUDE.md)
 
-**Status:** L2 (editor). Projects and files on disk; a LaTeX editor with autosave that notices changes made by other programs. Compiling (L3) is next. A hosted, collaborative version may follow later.
+**Status:** L3 (compile). Projects and files on disk, a LaTeX editor with autosave, and compiling with your local TeX installation — PDF preview, clickable errors and warnings. Polish (ZIP import/export, settings page, optional Docker compile) is next (L4). A hosted, collaborative version may follow later.
 
 ## Requirements
 
 - [Node.js](https://nodejs.org) 24 LTS (24.15 or newer). Check with `node --version`.
-- For compiling (from L3): a TeX distribution with `latexmk` — [TeX Live](https://tug.org/texlive/) (Windows/Linux), [MacTeX](https://tug.org/mactex/) (macOS) or [MiKTeX](https://miktex.org/) (Windows). Docker will be an optional alternative.
+- For compiling: a TeX distribution with `latexmk` on your PATH — [TeX Live](https://tug.org/texlive/) (Windows/Linux, e.g. `sudo apt install texlive-full latexmk`), [MacTeX](https://tug.org/mactex/) (macOS) or [MiKTeX](https://miktex.org/) (Windows). Without TeX the app still runs and shows install instructions; Docker will be an optional alternative (L4).
 
 ## Run it
 
@@ -39,6 +39,7 @@ The server only listens on `127.0.0.1` and rejects requests from other websites,
 |---|---|
 | App with hot reload (server + Vite) | `npm run dev` → <http://localhost:5173> |
 | Lint / typecheck / unit tests | `npm run lint` · `npm run typecheck` · `npm test` |
-| End-to-end tests (Playwright; first time: `npx playwright install chromium` in `apps/web`) | `npm run e2e` |
+| End-to-end tests (Playwright; first time: `npx playwright install chromium` in `apps/web`). Uses a fake latexmk and temporary folders. | `npm run e2e` |
+| …with your real TeX installation | `TEXCOLLAB_E2E_REAL_TEX=1 npm run e2e` |
 
 Layout: `apps/web` (React, Vite, CodeMirror, pdf.js) and `apps/server` (Node.js, Fastify; TypeScript runs directly, no build step). CI runs everything on Ubuntu, macOS and Windows.

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { startServer } from "../src/server.ts";
+import { FAKE_LATEXMK } from "./helpers.ts";
 
 describe("startServer", () => {
   it("creates the workspace and listens on 127.0.0.1 only", async () => {
@@ -17,6 +18,9 @@ describe("startServer", () => {
       workspace,
       webDist: "/nonexistent",
       devOrigins: [],
+      configDir: join(workspace, "..", "config"),
+      cacheDir: join(workspace, "..", "cache"),
+      latexmk: FAKE_LATEXMK,
     });
     try {
       const address = app.server.address() as AddressInfo;

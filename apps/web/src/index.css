@@ -754,11 +754,6 @@ a:focus-visible {
   padding: 1rem;
 }
 
-/* L1: two panes (tree | preview) until the PDF pane returns in L3 */
-.workspace-panes.two-panes {
-  grid-template-columns: var(--tree-width, 240px) 6px minmax(0, 1fr);
-}
-
 .workspace-path {
   margin-top: -0.5rem;
   font-size: 0.85rem;
@@ -800,4 +795,34 @@ a:focus-visible {
 .save-error,
 .save-deleted {
   color: var(--danger);
+}
+
+.stale-note {
+  margin: 0;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.tex-setup {
+  padding: 1rem 1.25rem;
+  overflow: auto;
+}
+
+.tex-setup h2 {
+  margin-top: 0;
+}
+
+.tex-setup h3 {
+  font-size: 0.95rem;
+  margin: 1rem 0 0.25rem;
+}
+
+.tex-setup li {
+  margin: 0.4rem 0;
+}
+
+/* The save state sits right before the compile controls. */
+.save-state + .compile-controls {
+  margin-left: 1rem;
 }

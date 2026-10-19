@@ -41,3 +41,31 @@ jobs:
           name: playwright-report-${{ matrix.os }}
           path: apps/web/playwright-report
           retention-days: 7
+
+  # The L3 acceptance checks with a real TeX installation (the matrix above uses a fake latexmk).
+  real-tex:
+    name: real TeX (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install TeX
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends latexmk texlive-latex-base texlive-latex-recommended texlive-xetex texlive-luatex
+      - run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - run: npm run e2e
+        env:
+          TEXCOLLAB_E2E_REAL_TEX: "1"
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: playwright-report-real-tex
+          path: apps/web/playwright-report
+          retention-days: 7

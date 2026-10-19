@@ -49,3 +49,13 @@ describe("loadConfig", () => {
     expect(() => loadConfig(["--nope"], {})).toThrow();
   });
 });
+
+describe("parseCommand", () => {
+  it("accepts a path or a JSON array", async () => {
+    const { parseCommand } = await import("../src/config.ts");
+    expect(parseCommand(undefined)).toBeNull();
+    expect(parseCommand("/usr/bin/latexmk")).toEqual(["/usr/bin/latexmk"]);
+    expect(parseCommand('["node", "fake.mjs"]')).toEqual(["node", "fake.mjs"]);
+    expect(() => parseCommand("[1]")).toThrow();
+  });
+});

@@ -180,7 +180,7 @@ export function PdfViewer({ url }: { url: string }) {
         </button>
         <a
           className="icon-button"
-          href={`${url}?download=true`}
+          href={`${url.split("?")[0] ?? url}?download=true`}
           aria-label="Download PDF"
           title="Download PDF"
         >
